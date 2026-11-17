@@ -254,12 +254,15 @@ sample with `cosf`, twice per voice, and `cosf` also pulled newlib's sine kernel
 into the image. They are calculated once when the model changes now: `nm -u` on
 the unit file lists nothing at all.
 
-Note-on costs 0.4 us per voice, and it used to be 1.7: the excitation is noise in
-the delay line, and only the first period of that line is ever read before the
-loop has written it, so the first version was seeding five to twenty times more
-samples than anyone would hear. The noise means no two strikes are identical —
-the attack RMS of one note spreads about 2.4 dB over seeds — so the recorded
-measurements are one strike, not the sound of the model.
+Note-on costs 1.7 us per voice, and most of that is the noise the note starts
+from. It is worth knowing what that does and does not allow: the unit used to
+zero the delay line before filling it, which was a second pass over 4 KB for
+nothing (the fill overwrites all of it anyway) and worth 3% of the note-on. What
+looks like the bigger win — seeding only the first period, since that is all the
+loop reads before it has written the rest — was tried and measured, and it takes
+note-on to 0.4 us, but it changes the attack by 6 dB: with the rest of the line
+holding an older note instead of noise, the first frames come out differently. So
+the whole line is seeded, and the loop keeps its attack.
 
 ### lpg — modulation effect (low pass gate)
 

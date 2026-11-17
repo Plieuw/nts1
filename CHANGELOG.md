@@ -10,10 +10,12 @@ Older history is in the commit log.
   sweep of the knob was flat within 2 dB and not even monotonic. Both now write
   one pressure, and the LFO offsets that one value, so the knob has an 18 dB
   range from a whisper to a growl.
-- A note starts from the first period of the delay line instead of seeding all
-  1024 samples, which nothing reads before the loop has written them. Note-on is
-  0.4 us per voice where it was 1.7; the excitation is noise either way, so the
-  sound is one more of the same.
+- Note-on no longer zeroes the delay line before filling it: the fill overwrites
+  every sample, so the zeroing was a second pass over 4 KB for nothing. It was
+  3% of the note-on, which is what a measurement says and a guess would not.
+  Seeding only the first period instead (all the loop reads before it has
+  written the rest) takes note-on from 1.7 to 0.4 us, but it moves the attack by
+  6 dB, so it was left out: the sound is worth more than a microsecond.
 
 ## bowed — 1.1-0
 
