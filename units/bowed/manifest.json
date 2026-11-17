@@ -1,0 +1,21 @@
+{
+    "header" :
+    {
+        "platform" : "nutekt-digital",
+        "module" : "osc",
+        "api" : "1.1-0",
+        "dev_id" : 1349081445,
+        "prg_id" : 2,
+        "version" : "1.0-0",
+        "name" : "bowed",
+        "num_param" : 6,
+        "params" : [
+            ["Model",    0,   4, ""],
+            ["Bow",      0, 100, "%"],
+            ["Rosin",    0, 100, "%"],
+            ["Tune",  -100, 100, "%"],
+            ["Level",    0, 100, "%"],
+            ["Attack",   0, 100, "%"]
+          ]
+    }
+}
