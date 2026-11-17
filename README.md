@@ -8,7 +8,7 @@ space model in the reverb slot — a unit for every user slot the instrument has
 | Unit | Slot | What it does | File |
 | --- | --- | --- | --- |
 | `noise` | OSC | Eight noise algorithms, from white to tuned resonance | `noise.ntkdigunit` |
-| `resonator` | OSC | Multi model modal resonator you play from the keyboard | `resonator.ntkdigunit` |
+| `resonator` | OSC | Nine model modal resonator, four voices, played from the keyboard | `resonator.ntkdigunit` |
 | `lpg` | MOD | Vactrol style low pass gate driven by an envelope follower | `lpg.ntkdigunit` |
 | `reso` | MOD | Twelve mode resonator with beating pairs, Rings in spirit | `reso.ntkdigunit` |
 | `elements` | MOD | Geometry morphing resonator: string, membrane, plate, bell | `elements.ntkdigunit` |
@@ -103,12 +103,16 @@ long you hear it ring.
 | 2 | plate | two dimensional bending modes: metal plates and sheets |
 | 3 | bell | strongly inharmonic partials, the high ones carry the character |
 | 4 | multi | one fundamental and the partials of all four objects at once |
+| 5 | chime | tubular bell: near harmonics that break up in the upper ones |
+| 6 | kalimba | free-free tine, almost all of its energy in the first partials |
+| 7 | glass | circular plate with a free edge: handpan, glass harp, gong |
+| 8 | pipe | open air column: harmonic, a struck wood or bamboo tube |
 
 | Control | Function |
 | --- | --- |
 | A (SHAPE) | decay, 0.1 s .. 12 s |
 | B (SHIFT) | brightness: how long the high modes live, and how open the strike is |
-| Edit 1 | `Model`: 0 string, 1 membrane, 2 plate, 3 bell, 4 multi |
+| Edit 1 | `Model`: 0 string, 1 membrane, 2 plate, 3 bell, 4 multi, 5 chime, 6 kalimba, 7 glass, 8 pipe |
 | Edit 2 | `Strike`: soft mallet .. hard hammer |
 | Edit 3 | `Pos`: where the strike lands across the object |
 | Edit 4 | `Tune`: ± 24 semitones |
@@ -123,11 +127,14 @@ middle and at the end. The attack is normalised over the sum of the modes and
 over the keyboard — the measured 7:1 spread between the bottom and the top of the
 range comes down to about 1.1:1 — so one note is as loud as the next.
 
-The unit keeps one bank of modes, so a new note strikes what is still ringing
-instead of adding a voice under it: it behaves like the one object it models.
-The pitch follows the keyboard and the tune knob, glides included, with a five
-cent threshold before the sixteen modes are rebuilt; a note that jumps far enough
-to put the bank into a runaway drops the bank instead of passing a NaN on.
+Four voices: the oscillator slot hands out note-on and note-off, so a new note
+takes a free voice instead of cutting off the note before it, and a released key
+leaves its object ringing. A fifth note steals the voice that has rung longest.
+Each voice keeps the pitch it was struck at — a struck object does not glide —
+except the newest one, which follows the keyboard and the tune knob so a solo line
+still bends; a note that jumps far enough to put a bank into a runaway drops that
+bank instead of passing a NaN on. Four notes at once are not four times as loud:
+a single voice keeps its level and the rest are tucked in under it.
 
 ### lpg — modulation effect (low pass gate)
 
@@ -302,7 +309,7 @@ those helpers are table lookups.
 | Unit | Text + data | SRAM | Cost |
 | --- | --- | --- | --- |
 | `noise` | 5.7 KB | 0.4 KB | 15 ns/frame |
-| `resonator` | 2.9 KB | 0.7 KB | 18 ns/frame |
+| `resonator` | 3.0 KB | 2.0 KB | 12 ns/frame (75 with four voices) |
 | `lpg` | 1.6 KB | 0.1 KB | 27 ns/frame |
 | `reso` | 1.5 KB | 0.4 KB | 13 ns/frame |
 | `elements` | 2.1 KB | 0.7 KB | 18 ns/frame |
