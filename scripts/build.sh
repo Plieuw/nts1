@@ -93,4 +93,8 @@ for unit in "${targets[@]}"; do
   build_unit "$unit"
 done
 
+# Every unit also has to fit the memory its slot gives it: a unit that grew past
+# its budget links here but not on the instrument.
+python3 "$ROOT/tools/check_budget.py" "$GCC_PATH/arm-none-eabi-size" || exit 1
+
 echo ">> done, unit files are in $DIST"

@@ -527,6 +527,21 @@ in the Makefile then line up.
 `.github/workflows/build.yml` builds all units on every push, uploads them as an
 artifact and attaches them to a GitHub release when you publish one.
 
+## Memory budgets
+
+The build checks that every unit still fits the memory its slot gives it — 32 KB
+for an oscillator, 6 KB for a modulation effect, 12 KB for a delay or reverb
+unit, with the reverb's SDRAM counted separately — and fails if one grew past
+it. `tools/check_budget.py` prints the numbers:
+
+```
+irbody       9028 /  12288 bytes of revfx memory  ok
+bowed       23592 /  32768 bytes of osc memory  ok
+```
+
+That check is not ceremony: `irbody` came within 3 KB of its 12 KB while it was
+getting its stereo paths, and what did not fit was libm, not the reverb.
+
 ## Changing the identity of a unit
 
 `dev_id` and `prg_id` live in each `units/*/manifest.json`. If you intend to

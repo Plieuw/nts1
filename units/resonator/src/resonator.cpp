@@ -57,6 +57,8 @@
 
 #include "userosc.h"
 
+#include "../../common/arcmath.h"
+
 namespace {
 
 constexpr int kModes = 16;
@@ -73,26 +75,6 @@ constexpr float kStrikeGain = 0.0018f;
 
 // The attack of a note peaks at about this, before the level knob.
 constexpr float kOutSum = 0.008f;
-
-// Small, libm free helpers: the oscillator budget is tight and one call into the
-// maths library would pull newlib's reentrancy struct in with it.
-// 2^x: the oscillator API has no table for it, so the exponent is split off
-// and the fraction is a short polynomial (2^r = e^(r ln 2), error below 1e-6).
-inline float pow2f(float x) {
-  int i = (int)x;
-  if (x < 0.f && (float)i != x)
-    --i;
-  const float t = (x - (float)i) * 0.69314718f;
-  const float p = 1.f + t * (1.f + t * (0.5f + t * (0.16666667f +
-                  t * (0.04166667f + t * (0.00833333f + t * 0.00138889f)))));
-  union { float f; uint32_t u; } scale;
-  scale.u = (uint32_t)(i + 127) << 23;
-  return p * scale.f;
-}
-
-inline float expNegSmall(float a) {
-  return 1.f - a + a * a * (0.5f - a * 0.16666667f);
-}
 
 // The ratio sets. A model is a set of modes plus the way that object behaves
 // under the knobs; together they are the palette of the unit. Each one is an
@@ -324,7 +306,7 @@ bool voiceQuiet(const Voice &v) {
 void voiceCoefficients(Voice &v, float f0, float note) {
   const ModelSpec &spec = kSpec[s.model];
   const float *const ratio = spec.ratio;
-  const float tau = 0.1f * pow2f(6.9f * s.decay) * spec.decay;   // 0.1 s .. 12 s
+  const float tau = 0.1f * arc_pow2f(6.9f * s.decay) * spec.decay;   // 0.1 s .. 12 s
   const float spread =
       (0.32f - 0.28f * s.bright + 0.30f * s.damp) * spec.spread;
 
@@ -346,8 +328,8 @@ void voiceCoefficients(Voice &v, float f0, float note) {
     // Ascending ratios, so everything past this point is above Nyquist too.
     active = k + 1;
 
-    const float tn = tau * pow2f(-spread * (float)k);
-    const float r = expNegSmall(1.f / (tn * kFs));
+    const float tn = tau * arc_pow2f(-spread * (float)k);
+    const float r = arc_expneg(1.f / (tn * kFs));
 
     v.a1[k] = 2.f * r * osc_cosf(clipminmaxf(0.f, f / kFs, 0.99f));
     v.a2[k] = -r * r;
@@ -368,18 +350,18 @@ void voiceCoefficients(Voice &v, float f0, float note) {
     // the levels were fitted at, so the fit still holds.
     const float btil = 0.45f * (s.bright - 0.55f);
     v.amp[k] = kStrikeGain * (1.f + 0.5f * s.strike) * node *
-               pow2f(btil * (float)k) / (1.f + spec.tilt * (float)k);
+               arc_pow2f(btil * (float)k) / (1.f + spec.tilt * (float)k);
   }
 
   v.modes = active;
 
   // The strike itself: a noise burst, short and bright for a hard hammer, long
   // and dark for a soft mallet.
-  const float exc_fc = 300.f * pow2f(4.9f * s.strike);   // 300 Hz .. 8.9 kHz
+  const float exc_fc = 300.f * arc_pow2f(4.9f * s.strike);   // 300 Hz .. 8.9 kHz
   v.exc_coef =
-      1.f - expNegSmall(6.2831853f * clipminmaxf(120.f, exc_fc, 16000.f) / kFs);
-  const float env_tau = 0.010f * pow2f(-2.0f * s.strike);  // 10 ms .. 2.5 ms
-  v.exc_env_coef = expNegSmall(1.f / (env_tau * kFs));
+      1.f - arc_expneg(6.2831853f * clipminmaxf(120.f, exc_fc, 16000.f) / kFs);
+  const float env_tau = 0.010f * arc_pow2f(-2.0f * s.strike);  // 10 ms .. 2.5 ms
+  v.exc_env_coef = arc_expneg(1.f / (env_tau * kFs));
 
   // Every mode starts in phase, so the attack is as loud as the sum of the
   // strike amplitudes: a low note that keeps all sixteen modes, or the multi
@@ -398,7 +380,7 @@ void voiceCoefficients(Voice &v, float f0, float note) {
   // its stretched partials run out first.
   const float oct = (note - 60.f) * (1.f / 12.f);
   const float trim = clipminmaxf(
-      0.05f, pow2f((0.85f + spec.reg) * oct + spec.bend * oct * oct), 32.f);
+      0.05f, arc_pow2f((0.85f + spec.reg) * oct + spec.bend * oct * oct), 32.f);
   v.out_gain = ((sum > 1e-9f) ? (kOutSum / sum) : 1.f) * trim * spec.gain;
 }
 
@@ -407,7 +389,7 @@ float f0ForNote(int note_id, float fine, float tune) {
   const int ni = (int)n;
   const int nf = (int)((n - (float)ni) * 255.f);
   return osc_w0f_for_note((uint8_t)ni, (uint8_t)nf) * (float)k_samplerate *
-         pow2f(tune * (1.f / 12.f));
+         arc_pow2f(tune * (1.f / 12.f));
 }
 
 // Picks the voice a new note goes to: the same note first (a repeat is a new

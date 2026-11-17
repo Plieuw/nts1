@@ -13,6 +13,8 @@
 
 #include "userosc.h"
 
+#include "../../common/arcmath.h"
+
 namespace {
 
 constexpr int kVoices = 4;
@@ -20,20 +22,6 @@ constexpr int kMaxPeriod = 1024;      // 47 Hz at 48 kHz
 constexpr float kFs = 48000.f;
 constexpr float kPi = 3.14159265358979f;
 constexpr float kDcCoef = 6.2831853f * 12.f / 48000.f;  // 12 Hz
-
-// libm free, like the rest of the repo: a call into expf or sinf from an
-// oscillator costs more flash than the whole loop below.
-inline float pow2f(float x) {
-  int i = (int)x;
-  if (x < 0.f && (float)i != x)
-    --i;
-  const float t = (x - (float)i) * 0.69314718f;
-  const float p = 1.f + t * (1.f + t * (0.5f + t * (0.16666667f +
-                  t * (0.04166667f + t * (0.00833333f + t * 0.00138889f)))));
-  union { float f; uint32_t u; } scale;
-  scale.u = (uint32_t)(i + 127) << 23;
-  return p * scale.f;
-}
 
 // A model is the loop's character: how lossy it is, where its body sits, and how
 // much the bow's own noise gets through. The four are a string, a struck-but-
@@ -143,13 +131,13 @@ void strike(int note, float fine) {
   s.next = (s.next + 1) % kVoices;
   clearVoice(v);
   const float n = (float)note + fine + s.tune;
-  v.f0 = 440.f * pow2f((n - 69.f) * (1.f / 12.f));
+  v.f0 = 440.f * arc_pow2f((n - 69.f) * (1.f / 12.f));
   setPeriod(v, v.f0);
   v.held = true;
   // The bow does not catch the string instantly: at a low pressure it takes
   // longer, which is most of what a slow bow attack sounds like.
   const float t = 0.004f + 0.35f * s.attack * (1.2f - s.pressure);
-  v.env_coef = 1.f - pow2f(-1.f / (t * kFs) * 6.9f);
+  v.env_coef = 1.f - arc_pow2f(-1.f / (t * kFs) * 6.9f);
   v.env = 0.f;
   // A little something in the loop to start it, or a silent loop stays silent.
   for (int i = 0; i < kMaxPeriod; ++i)

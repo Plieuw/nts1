@@ -41,43 +41,14 @@
 
 #include "userrevfx.h"
 
+#include "../../common/arcmath.h"
+
 #include "ir_model.h"
 
 namespace {
 
 constexpr float kFs = 48000.f;
 constexpr float kPi = 3.14159265358979f;
-
-// This slot has 12 KB of flash for code, data and the stubs of anything it calls,
-// and the prologue does not discard libm: a single expf or cosf there costs more
-// than the whole engine. These are the resonator's helpers, which is why that
-// unit fits too.
-inline float pow2f(float x) {
-  int i = (int)x;
-  if (x < 0.f && (float)i != x)
-    --i;
-  const float t = (x - (float)i) * 0.69314718f;
-  const float p = 1.f + t * (1.f + t * (0.5f + t * (0.16666667f +
-                  t * (0.04166667f + t * (0.00833333f + t * 0.00138889f)))));
-  union { float f; uint32_t u; } scale;
-  scale.u = (uint32_t)(i + 127) << 23;
-  return p * scale.f;
-}
-
-inline float expNegSmall(float a) {
-  return 1.f - a + a * a * (0.5f - a * 0.16666667f);
-}
-
-// sin and cos of a radian angle below 2.9, which is all a mode frequency here can
-// produce (it stops at 0.45 of the sample rate). Taylor to the ninth order: the
-// error is below 1e-5, and a resonator only needs its poles to be right.
-inline void sincosRad(float w, float &s, float &c) {
-  const float w2 = w * w;
-  s = w * (1.f + w2 * (-1.66666667e-1f + w2 * (8.33333333e-3f +
-      w2 * (-1.98412698e-4f + w2 * 2.75573192e-6f))));
-  c = 1.f + w2 * (-5e-1f + w2 * (4.16666667e-2f + w2 * (-1.38888889e-3f +
-      w2 * 2.48015873e-5f)));
-}
 
 constexpr int kMaxModes = 11;   // the widest mode set in ir_model.h
 constexpr int kCombs = 4;
@@ -303,10 +274,10 @@ void buildEngine(int slot, float pos) {
     if (f <= 0.f || f >= 0.45f * kFs)
       continue;
 
-    const float r = expNegSmall(1.f / (p.tau * m.decay * kFs));
+    const float r = arc_expneg(1.f / (p.tau * m.decay * kFs));
     const float w = 2.f * kPi * f / kFs;
     float sw, cw;
-    sincosRad(w, sw, cw);
+    arc_sincos(w, sw, cw);
     e.a1[k] = 2.f * r * cw;
     e.a2[k] = -r * r;
     // The model gives each mode an amplitude in the response. Convolved with a
@@ -332,12 +303,12 @@ void buildEngine(int slot, float pos) {
     if (len < 16)
       len = 16;
     e.comb_len[c] = len;
-    e.comb_fb[c] = clipminmaxf(0.f, expNegSmall((float)len / (tau * kFs)), 0.93f);
+    e.comb_fb[c] = clipminmaxf(0.f, arc_expneg((float)len / (tau * kFs)), 0.93f);
 
     // Brightness is how long the high band lives compared with the low one; in
     // the loop that is a one pole that takes a little more away each pass.
     const float fc = clipminmaxf(400.f, 500.f + 3500.f * bright, 0.45f * kFs);
-    e.comb_damp[c] = 1.f - expNegSmall(2.f * kPi * fc / kFs);
+    e.comb_damp[c] = 1.f - arc_expneg(2.f * kPi * fc / kFs);
   }
   const float noiseA = irmodel::kPresets[a].noise, noiseB = irmodel::kPresets[b].noise;
   e.tail_gain = (noiseA + (noiseB - noiseA) * t) * kTailScale * trim.tail;
@@ -345,10 +316,10 @@ void buildEngine(int slot, float pos) {
   // The model's tail is a low band with a high band on top, and the high band is
   // the one that dies first: the split on the way in and the one pole at the end
   // are what let the tail darken as it goes instead of sounding like noise.
-  e.tail_cut = 1.f - expNegSmall(2.f * kPi * 450.f / kFs);
+  e.tail_cut = 1.f - arc_expneg(2.f * kPi * 450.f / kFs);
   e.tail_hi = 0.2f + 0.6f * bright;
   const float tail_lp = 900.f + 2600.f * bright;
-  e.tail_out_cut = 1.f - expNegSmall(2.f * kPi * tail_lp / kFs);
+  e.tail_out_cut = 1.f - arc_expneg(2.f * kPi * tail_lp / kFs);
 
   e.ap_g = 0.6f;
   e.level = level;
@@ -473,9 +444,9 @@ __attribute__((noinline)) void engineSample(int slot, Engine &e, float x,
 }
 
 void updateDamping() {
-  const float fc = 1200.f * pow2f(2.71f * 1.44269504f * s.damp);  // 1.2..18 kHz
+  const float fc = 1200.f * arc_pow2f(2.71f * 1.44269504f * s.damp);  // 1.2..18 kHz
   s.damp_coef =
-      1.f - expNegSmall(2.f * kPi * clipminmaxf(200.f, fc, 0.45f * kFs) / kFs);
+      1.f - arc_expneg(2.f * kPi * clipminmaxf(200.f, fc, 0.45f * kFs) / kFs);
 }
 
 // Starts a crossfade into preset p: the free slot is rebuilt, the other one keeps
