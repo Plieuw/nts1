@@ -8,9 +8,10 @@
  * a diffuse tail whose high frequencies die away faster than its low ones, a
  * short broadband impact for the knock, and early reflections for the spaces.
  *
- * The same header drives the unit (it renders into SDRAM when a response is
- * selected) and tools/make_irs.cpp (which writes the very same responses as WAV
- * files), so the files in ir/ are exactly what the unit convolves with.
+ * The unit builds its filters from these numbers (a resonator per mode, a
+ * feedback delay network with the decay and brightness of the tail), and
+ * tools/make_irs.cpp renders the same model as WAV files in ir/. The WAV files
+ * are the reference: the unit's levels were fitted band by band to them.
  *
  * Mode ratios: violin, cello and guitar use the air and wood resonances of the
  * real instruments (A0, B1-, B1+ and the bridge hill), the wood preset uses the

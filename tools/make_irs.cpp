@@ -6,8 +6,9 @@
  *   g++ -O2 tools/make_irs.cpp -o /tmp/make_irs && /tmp/make_irs ir
  *
  * The responses come from units/irbody/src/ir_model.h, the same header the unit
- * renders from on the device, so these files are exactly what it convolves
- * with. Mono, 48 kHz, 16 bit PCM.
+ * builds its filters from, so these files are the object the unit models: they
+ * are the reference its levels were fitted to, and they are still the thing to
+ * convolve something else with. Mono, 48 kHz, 16 bit PCM.
  */
 
 #include <cstdio>
