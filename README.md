@@ -62,9 +62,9 @@ the attack stand out.
 | 60–80 % | ping | narrow ring tuned to the note, 140 ms | `elements` bell end, `irbody` plate |
 | 80–100 % | knock | knuckle on wood, 5 kHz and down, slow | `irbody` room, or a low thump under anything |
 
-All five were measured to land at the same attack level (within 0.3 dB), so
+All five were measured to land at the same attack level (within 1 dB), so
 changing shape does not change how loud the attack is: at full level the attack
-peaks 1.7 to 2.3 times the steady level of the noise. Velvet and crackle already
+peaks 1.7 to 2.5 times the steady level of the noise. Velvet and crackle already
 produce transients at grain level, so keep `Trans` in an empty band when you use
 those for a dry, dusty sound.
 
