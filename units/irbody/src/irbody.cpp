@@ -48,6 +48,37 @@ namespace {
 constexpr float kFs = 48000.f;
 constexpr float kPi = 3.14159265358979f;
 
+// This slot has 12 KB of flash for code, data and the stubs of anything it calls,
+// and the prologue does not discard libm: a single expf or cosf there costs more
+// than the whole engine. These are the resonator's helpers, which is why that
+// unit fits too.
+inline float pow2f(float x) {
+  int i = (int)x;
+  if (x < 0.f && (float)i != x)
+    --i;
+  const float t = (x - (float)i) * 0.69314718f;
+  const float p = 1.f + t * (1.f + t * (0.5f + t * (0.16666667f +
+                  t * (0.04166667f + t * (0.00833333f + t * 0.00138889f)))));
+  union { float f; uint32_t u; } scale;
+  scale.u = (uint32_t)(i + 127) << 23;
+  return p * scale.f;
+}
+
+inline float expNegSmall(float a) {
+  return 1.f - a + a * a * (0.5f - a * 0.16666667f);
+}
+
+// sin and cos of a radian angle below 2.9, which is all a mode frequency here can
+// produce (it stops at 0.45 of the sample rate). Taylor to the ninth order: the
+// error is below 1e-5, and a resonator only needs its poles to be right.
+inline void sincosRad(float w, float &s, float &c) {
+  const float w2 = w * w;
+  s = w * (1.f + w2 * (-1.66666667e-1f + w2 * (8.33333333e-3f +
+      w2 * (-1.98412698e-4f + w2 * 2.75573192e-6f))));
+  c = 1.f + w2 * (-5e-1f + w2 * (4.16666667e-2f + w2 * (-1.38888889e-3f +
+      w2 * 2.48015873e-5f)));
+}
+
 constexpr int kMaxModes = 11;   // the widest mode set in ir_model.h
 constexpr int kCombs = 4;
 constexpr int kCombMax = 1400;  // 29 ms at 48 kHz, the longest comb
@@ -55,6 +86,11 @@ constexpr int kAp0Len = 240;    // 5.0 ms allpass
 constexpr int kAp1Len = 96;     // 2.0 ms allpass
 constexpr int kPresetCount = irmodel::kPresetCount;
 constexpr int kFadeSamples = 4096;  // 85 ms crossfade on a switch
+// Left and right read the same four lines a few samples apart: a body is one
+// object, so its modes stay in the middle, but its tail arrives at two points
+// of the corpus, and that difference is what a listener hears as size.
+const int kTap[kCombs] = {53, 97, 31, 149};
+constexpr float kStereoTrim = 0.72f;  // see engineSample
 
 // The old unit normalised every response to a peak of 0.5 and convolved with it.
 // A mode of amplitude A and damping 1 - r has a resonant gain of A / (2 (1 - r))
@@ -69,6 +105,18 @@ constexpr float kTailScale = 1.f;
 float g_comb[2][kCombs][kCombMax] __sdram;
 float g_ap0[2][kAp0Len] __sdram;
 float g_ap1[2][kAp1Len] __sdram;
+float g_ap2[2][kAp1Len] __sdram;  // the side signal, so left and right differ
+// A long allpass on that difference, mostly a delay with no echo of its own:
+// at a few millimetres of path the two ears get nearly the same signal, and it
+// takes a path of this order before the channels genuinely differ.
+constexpr int kAp3Len = 449;  // 9.4 ms; the SRAM this slot has left is the limit, not the sound
+// The modes are one object, but they do not radiate from one point either: the
+// right channel takes them through an allpass of a third of a millisecond. An
+// allpass keeps the level, so this widens the upper partials of every body
+// without putting a notch in the sum.
+constexpr int kAp4Len = 17;
+float g_ap3[2][kAp3Len] __sdram;
+float g_ap4[2][kAp4Len] __sdram;
 
 /*---------------------------------------------------------------------------*
  * One engine: the resonances of an object plus its tail
@@ -105,6 +153,11 @@ struct Engine {
   float tail_lp_in;
   float tail_out_cut;
   float tail_out_lp;
+  float tail_out_lp_s;
+  int ap3_pos;
+  int ap4_pos;
+  float level;
+  int ap2_pos;
 };
 
 Engine g_eng[2];
@@ -112,7 +165,10 @@ Engine g_eng[2];
 struct State {
   int active;   // engine slot in the output
   int target;   // engine slot fading in, -1 when not fading
-  int queued;   // last request that arrived during a fade, -1 when none
+  float pos;    // where the body knob sits, 0 .. presets-1, continuous
+  float queued; // last request that arrived during a fade
+  int has_queued;
+  float damp_lp_r;
   float fade;   // 0..1, position of the crossfade
   float damp;   // 0..1
   float wet;    // 0..1
@@ -134,8 +190,12 @@ void clearEngine(Engine &e) {
   }
   e.tail_lp_in = 0.f;
   e.tail_out_lp = 0.f;
+  e.tail_out_lp_s = 0.f;
   e.ap0_pos = 0;
   e.ap1_pos = 0;
+  e.ap2_pos = 0;
+  e.ap3_pos = 0;
+  e.ap4_pos = 0;
 }
 
 void clearBuffers(int slot) {
@@ -144,8 +204,14 @@ void clearBuffers(int slot) {
       g_comb[slot][c][i] = 0.f;
   for (int i = 0; i < kAp0Len; ++i)
     g_ap0[slot][i] = 0.f;
-  for (int i = 0; i < kAp1Len; ++i)
+  for (int i = 0; i < kAp1Len; ++i) {
     g_ap1[slot][i] = 0.f;
+    g_ap2[slot][i] = 0.f;
+  }
+  for (int i = 0; i < kAp3Len; ++i)
+    g_ap3[slot][i] = 0.f;
+  for (int i = 0; i < kAp4Len; ++i)
+    g_ap4[slot][i] = 0.f;
 }
 
 // The comb delays carry the size of the object: a violin body answers inside a
@@ -162,6 +228,18 @@ struct Trim {
   float tail;
 };
 
+// How large the object is. The mode frequencies come from the model and cannot
+// be stretched sensibly, but the tail can: these are the factors the comb
+// lengths are scaled by, and morphing between two bodies walks from one to the
+// other (a violin into a cello) instead of jumping.
+const float kSize[kPresetCount] = {0.82f, 1.12f, 1.38f, 0.78f,
+                                   0.92f, 1.24f, 0.88f, 1.06f};
+
+// Measured on the host: the RMS each body settles at for the same input, in
+// dB against the loudest of them. Without these the knob jumps by up to 9 dB
+// between bodies (steel is the quiet one), and the crossfade would not hide it.
+const float kLevelDb[kPresetCount] = {4.0f, 0.0f, 3.0f, 0.3f, 1.3f, 9.8f, 0.3f, 0.7f};
+
 const Trim kTrim[kPresetCount] = {
     {0.638f, 4.167f},  // violin
     {0.808f, 2.585f},  // cello
@@ -175,13 +253,35 @@ const Trim kTrim[kPresetCount] = {
 
 // Builds one engine for a preset. Only ever called from the parameter callback
 // or from init, where a handful of exponentials is fine.
-void buildEngine(int slot, int preset) {
-  if (preset < 0)
-    preset = 0;
-  if (preset >= kPresetCount)
-    preset = kPresetCount - 1;
-
+void buildEngine(int slot, float pos) {
+  if (pos < 0.f)
+    pos = 0.f;
+  if (pos > (float)(kPresetCount - 1))
+    pos = (float)(kPresetCount - 1);
+  const int a = (int)pos;
+  const int b = (a + 1 < kPresetCount) ? a + 1 : a;
+  const float t = pos - (float)a;
+  // The mode set is the nearest body: ratios cannot be blended, and half of one
+  // body's partials with half of another's is neither. Everything that is a
+  // number — damping, brightness, the loudness of the two halves, the size —
+  // glides.
+  const int preset = (t < 0.5f) ? a : b;
   const irmodel::Preset &p = irmodel::kPresets[preset];
+  // Through the geometric middle of the two, not the arithmetic one: the halves
+  // are loudnesses, and linearly the midpoint of two bodies lands a decibel or
+  // two above both of them. Two straight segments through their square root
+  // cost a sqrt instead of a pow, which this slot has no room for.
+  const Trim &trimA = kTrim[a], &trimB = kTrim[b];
+  const float gb = sqrtf(trimA.bank * trimB.bank);
+  const float gt = sqrtf(trimA.tail * trimB.tail);
+  const Trim trim = {(t < 0.5f) ? trimA.bank + (gb - trimA.bank) * (2.f * t)
+                                : gb + (trimB.bank - gb) * (2.f * t - 1.f),
+                     (t < 0.5f) ? trimA.tail + (gt - trimA.tail) * (2.f * t)
+                                : gt + (trimB.tail - gt) * (2.f * t - 1.f)};
+  const float size = kSize[a] + (kSize[b] - kSize[a]) * t;
+  const float level = powf(10.f, (kLevelDb[a] + (kLevelDb[b] - kLevelDb[a]) * t) / 20.f);
+  const float bright = irmodel::kPresets[a].bright +
+                       (irmodel::kPresets[b].bright - irmodel::kPresets[a].bright) * t;
   Engine &e = g_eng[slot];
   clearBuffers(slot);
   clearEngine(e);
@@ -203,9 +303,11 @@ void buildEngine(int slot, int preset) {
     if (f <= 0.f || f >= 0.45f * kFs)
       continue;
 
-    const float r = expf(-1.f / (p.tau * m.decay * kFs));
+    const float r = expNegSmall(1.f / (p.tau * m.decay * kFs));
     const float w = 2.f * kPi * f / kFs;
-    e.a1[k] = 2.f * r * cosf(w);
+    float sw, cw;
+    sincosRad(w, sw, cw);
+    e.a1[k] = 2.f * r * cw;
     e.a2[k] = -r * r;
     // The model gives each mode an amplitude in the response. Convolved with a
     // sound, a mode of amplitude A and damping 1 - r emphasises its frequency by
@@ -213,39 +315,43 @@ void buildEngine(int slot, int preset) {
     // and a resonator driven at its own frequency settles at exactly that for a
     // gain of A sin w / 2. This is that gain, so the mode lands where the
     // convolution put it.
-    e.mode_gain[k] = 0.5f * m.amp * sinf(w) * kBankScale * kTrim[preset].bank;
+    e.mode_gain[k] = 0.5f * m.amp * sw * kBankScale * trim.bank;
   }
 
   // Diffuse tail. The feedback is what the response's decay calls for over the
   // line's own length: a delay line of D samples with feedback g dies with a
   // time constant of -D / ln(g), so g = exp(-D / tau) gives the model's tau.
   const float *delays = kBodyDelays;
-  const float tau = (p.noise_tau > 0.0005f) ? p.noise_tau : 0.0005f;
+  const float tauA = (irmodel::kPresets[a].noise_tau > 0.0005f) ? irmodel::kPresets[a].noise_tau : 0.0005f;
+  const float tauB = (irmodel::kPresets[b].noise_tau > 0.0005f) ? irmodel::kPresets[b].noise_tau : 0.0005f;
+  const float tau = tauA + (tauB - tauA) * t;
   for (int c = 0; c < kCombs; ++c) {
-    int len = (int)(delays[c] * kFs);
+    int len = (int)(delays[c] * kFs * size);
     if (len > kCombMax)
       len = kCombMax;
     if (len < 16)
       len = 16;
     e.comb_len[c] = len;
-    e.comb_fb[c] = clipminmaxf(0.f, expf(-(float)len / (tau * kFs)), 0.93f);
+    e.comb_fb[c] = clipminmaxf(0.f, expNegSmall((float)len / (tau * kFs)), 0.93f);
 
     // Brightness is how long the high band lives compared with the low one; in
     // the loop that is a one pole that takes a little more away each pass.
-    const float fc = clipminmaxf(400.f, 500.f + 3500.f * p.bright, 0.45f * kFs);
-    e.comb_damp[c] = 1.f - expf(-2.f * kPi * fc / kFs);
+    const float fc = clipminmaxf(400.f, 500.f + 3500.f * bright, 0.45f * kFs);
+    e.comb_damp[c] = 1.f - expNegSmall(2.f * kPi * fc / kFs);
   }
-  e.tail_gain = p.noise * kTailScale * kTrim[preset].tail;
+  const float noiseA = irmodel::kPresets[a].noise, noiseB = irmodel::kPresets[b].noise;
+  e.tail_gain = (noiseA + (noiseB - noiseA) * t) * kTailScale * trim.tail;
 
   // The model's tail is a low band with a high band on top, and the high band is
   // the one that dies first: the split on the way in and the one pole at the end
   // are what let the tail darken as it goes instead of sounding like noise.
-  e.tail_cut = 1.f - expf(-2.f * kPi * 450.f / kFs);
-  e.tail_hi = 0.2f + 0.6f * p.bright;
-  const float tail_lp = 900.f + 2600.f * p.bright;
-  e.tail_out_cut = 1.f - expf(-2.f * kPi * tail_lp / kFs);
+  e.tail_cut = 1.f - expNegSmall(2.f * kPi * 450.f / kFs);
+  e.tail_hi = 0.2f + 0.6f * bright;
+  const float tail_lp = 900.f + 2600.f * bright;
+  e.tail_out_cut = 1.f - expNegSmall(2.f * kPi * tail_lp / kFs);
 
   e.ap_g = 0.6f;
+  e.level = level;
   e.bank_scale = kBankScale;
 }
 
@@ -253,7 +359,13 @@ void buildEngine(int slot, int preset) {
  * Rendering
  *---------------------------------------------------------------------------*/
 
-inline float engineSample(int slot, Engine &e, float x) {
+// Left and right are two orthogonal mixtures of the same four lines, then a
+// separate allpass on the difference: the body is one object, so its resonances
+// stay in the middle, but the tail arrives from slightly different places.
+// Deliberately not inline: the slot has 12 KB of flash for everything, and the
+// fade path and the plain path both call this, so inlining it costs a kilobyte.
+__attribute__((noinline)) void engineSample(int slot, Engine &e, float x,
+                                            float &out_l, float &out_r) {
   // Resonances: two poles, driven by the input, summed with the mode levels.
   float bank = 0.f;
   for (int k = 0; k < e.modes; ++k) {
@@ -273,6 +385,7 @@ inline float engineSample(int slot, Engine &e, float x) {
   // is what makes the tail dense; four combs side by side would leave the peaks
   // of their own lengths standing, which sounds like a flange instead of a room.
   float tail = 0.f;
+  float side = 0.f;
   float out_sum = 0.f;
   for (int c = 0; c < kCombs; ++c) {
     const float out = g_comb[slot][c][e.comb_pos[c]];
@@ -280,6 +393,9 @@ inline float engineSample(int slot, Engine &e, float x) {
     e.comb_fb_out[c] = e.comb_lp[c] * e.comb_fb[c];
     out_sum += e.comb_fb_out[c];
     tail += out;
+    int p2 = e.comb_pos[c] + kTap[c];
+    if (p2 >= e.comb_len[c]) p2 -= e.comb_len[c];
+    side += g_comb[slot][c][p2];
   }
   const float h = out_sum * (2.f / (float)kCombs);
   for (int c = 0; c < kCombs; ++c) {
@@ -309,31 +425,71 @@ inline float engineSample(int slot, Engine &e, float x) {
     tail = y;
   }
 
+  {
+    float *buf = g_ap2[slot];
+    const float d = buf[e.ap2_pos];
+    const float y = d - e.ap_g * side;
+    buf[e.ap2_pos] = side + e.ap_g * y;
+    if (++e.ap2_pos >= kAp1Len)
+      e.ap2_pos = 0;
+    side = y;
+  }
+  {
+    float *buf = g_ap3[slot];
+    const float d = buf[e.ap3_pos];
+    const float y = d - 0.72f * side;
+    buf[e.ap3_pos] = side + 0.72f * y;
+    if (++e.ap3_pos >= kAp3Len)
+      e.ap3_pos = 0;
+    side = y;
+  }
+
   // The model's tail is a low band with a high band on top of it, and the high
   // band is what dies first: the combs, the split and this one pole are what
   // make the tail darken as it goes instead of sounding like filtered noise.
   e.tail_out_lp += (tail - e.tail_out_lp) * e.tail_out_cut;
+  e.tail_out_lp_s += (side - e.tail_out_lp_s) * e.tail_out_cut;
 
-  return bank + e.tail_out_lp * e.tail_gain;
+  // Each channel carries the whole body, so both are trimmed to keep the pair
+  // from being louder than the mono unit used to be.
+  const float mid = kStereoTrim * bank;
+  const float t_m = kStereoTrim * e.tail_out_lp * e.tail_gain;
+
+  float bank_r = kStereoTrim * bank;
+  {
+    float *buf = g_ap4[slot];
+    const float d = buf[e.ap4_pos];
+    const float y = d - 0.4f * bank_r;
+    buf[e.ap4_pos] = bank_r + 0.4f * y;
+    if (++e.ap4_pos >= kAp4Len)
+      e.ap4_pos = 0;
+    // Only a little of the rotated copy: two points on a violin are not two
+    // different violins.
+    bank_r = 0.85f * bank_r + 0.15f * y;
+  }
+
+  out_l = (mid + t_m) * e.level;
+  out_r = (bank_r + kStereoTrim * e.tail_out_lp_s * e.tail_gain) * e.level;
 }
 
 void updateDamping() {
-  const float fc = 1200.f * expf(2.71f * s.damp);  // 1.2 kHz .. 18 kHz
+  const float fc = 1200.f * pow2f(2.71f * 1.44269504f * s.damp);  // 1.2..18 kHz
   s.damp_coef =
-      1.f - expf(-2.f * kPi * clipminmaxf(200.f, fc, 0.45f * kFs) / kFs);
+      1.f - expNegSmall(2.f * kPi * clipminmaxf(200.f, fc, 0.45f * kFs) / kFs);
 }
 
 // Starts a crossfade into preset p: the free slot is rebuilt, the other one keeps
 // playing.
-void startFade(int preset) {
+void startFade(float pos) {
+  s.pos = pos;
   if (!s.ready) {
-    buildEngine(0, preset);
+    buildEngine(0, pos);
     s.active = 0;
     s.ready = 1;
     return;
   }
   const int slot = (s.active == 0) ? 1 : 0;
-  buildEngine(slot, preset);
+  buildEngine(slot, pos);
   s.target = slot;
   s.fade = 0.f;
 }
@@ -350,11 +506,14 @@ void REVFX_INIT(uint32_t platform, uint32_t api) {
 
   s.active = 0;
   s.target = -1;
-  s.queued = -1;
+  s.pos = 0.f;
+  s.queued = 0.f;
+  s.has_queued = 0;
   s.fade = 0.f;
   s.damp = 0.7f;
   s.wet = 0.5f;
   s.damp_lp = 0.f;
+  s.damp_lp_r = 0.f;
   s.ready = 0;
 
   updateDamping();
@@ -374,49 +533,58 @@ void REVFX_PROCESS(float *xn, uint32_t frames) {
     const float in = 0.5f * (xn[2 * i] + xn[2 * i + 1]);
 
     const int sa = s.active;
-    float wet;
+    float wl, wr;
     if (s.target >= 0) {
       const float f = s.fade;
-      wet = (1.f - f) * engineSample(sa, g_eng[sa], in) +
-            f * engineSample(s.target, g_eng[s.target], in);
+      float al, ar, bl, br;
+      engineSample(sa, g_eng[sa], in, al, ar);
+      engineSample(s.target, g_eng[s.target], in, bl, br);
+      wl = (1.f - f) * al + f * bl;
+      wr = (1.f - f) * ar + f * br;
       s.fade += 1.f / (float)kFadeSamples;
       if (s.fade >= 1.f) {
         s.active = s.target;
         s.target = -1;
         s.fade = 0.f;
-        if (s.queued >= 0) {
-          const int p = s.queued;
-          s.queued = -1;
+        if (s.has_queued) {
+          const float p = s.queued;
+          s.has_queued = 0;
           startFade(p);
         }
       }
     } else {
-      wet = engineSample(sa, g_eng[sa], in);
+      engineSample(sa, g_eng[sa], in, wl, wr);
     }
 
-    s.damp_lp += (wet - s.damp_lp) * s.damp_coef;
-    const float y = in + (s.damp_lp - in) * s.wet;
-    xn[2 * i] = fx_softclipf(0.05f, y);
-    xn[2 * i + 1] = xn[2 * i];
+    s.damp_lp += (wl - s.damp_lp) * s.damp_coef;
+    s.damp_lp_r += (wr - s.damp_lp_r) * s.damp_coef;
+    xn[2 * i] = fx_softclipf(0.05f, in + (s.damp_lp - in) * s.wet);
+    xn[2 * i + 1] = fx_softclipf(0.05f, in + (s.damp_lp_r - in) * s.wet);
   }
 }
 
 void REVFX_PARAM(uint8_t index, int32_t value) {
   switch (index) {
   case k_user_revfx_param_time: {
-    const int sel = (int)clipminmaxf(
-        0.f, (float)value * (1.f / 1023.f) * (float)kPresetCount,
-        (float)(kPresetCount - 1));
-
-    if (sel == s.active || sel == s.target)
+    // The A knob is a continuum, not eight steps. Between two bodies the mode
+    // set is the nearest one but its damping, brightness, level and size glide
+    // into the next, so a violin can be walked into a cello. Quarter steps:
+    // finer than that is more crossfades than a turn of the knob can use.
+    const float pos = clipminmaxf(0.f,
+                                  (float)value * (1.f / 1023.f) *
+                                      (float)(kPresetCount - 1),
+                                  (float)(kPresetCount - 1));
+    const float q = (float)((int)(pos * 4.f + 0.5f)) * 0.25f;
+    if (q == s.pos)
       break;
 
     if (s.target >= 0) {
       // While a crossfade runs, remember only the latest request: the knob
       // sends a stream of values and we do not want a crossfade per value.
-      s.queued = sel;
+      s.queued = q;
+      s.has_queued = 1;
     } else {
-      startFade(sel);
+      startFade(q);
     }
     break;
   }
@@ -441,9 +609,10 @@ void REVFX_SUSPEND(void) {
   clearEngine(g_eng[0]);
   clearEngine(g_eng[1]);
   s.target = -1;
-  s.queued = -1;
+  s.has_queued = 0;
   s.fade = 0.f;
   s.damp_lp = 0.f;
+  s.damp_lp_r = 0.f;
 }
 
 void REVFX_RESUME(void) {}

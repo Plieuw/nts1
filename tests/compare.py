@@ -35,6 +35,9 @@ def main(golden, current):
         elif key in ("nan", "fuzznan"):
             if cv[0] != 0:
                 problems.append("%s %d" % (key, int(cv[0])))
+        elif key in ("corr", "corr_hi"):
+            if abs(cv[0] - gv[0]) > 0.04:
+                problems.append("channel correlation %.3f, was %.3f" % (cv[0], gv[0]))
         elif key == "fuzzpeak":
             if cv[0] > 0.99:
                 problems.append("fuzz peak %.3f clips" % cv[0])

@@ -11,9 +11,9 @@ OUT=${OUT:-/tmp/nts1-tests}
 mkdir -p "$OUT"
 
 status=0
-for u in noise resonator lpg reso elements barber irbody; do
+for u in noise resonator bowed lpg reso elements barber irbody; do
   case $u in
-    noise|resonator)         kind=0 ;;
+    noise|resonator|bowed)   kind=0 ;;
     lpg|reso|elements)       kind=1 ;;
     barber)                  kind=2 ;;
     irbody)                  kind=3 ;;
@@ -26,7 +26,7 @@ for u in noise resonator lpg reso elements barber irbody; do
   # take both from the manifest the unit ships with.
   # A modulation effect declares no edit parameters on the NTS-1 but still has
   # its two knobs at run time, so it gets two.
-  case $u in resonator) PERMODEL="--permodel 17" ;; *) PERMODEL="" ;; esac
+  case $u in resonator) PERMODEL="--permodel 17" ;; bowed) PERMODEL="--permodel 5" ;; *) PERMODEL="" ;; esac
   KNOBS=$(python3 -c "
 import json
 module = json.load(open('units/$u/manifest.json'))['header']['module']

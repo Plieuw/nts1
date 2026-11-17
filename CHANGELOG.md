@@ -3,6 +3,24 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## bowed — 1.0-0
+
+- A new oscillator: a bowed string rather than a struck one. Four voices, five
+  models (string, metal, pipe, hum, glass), bow pressure on A and brightness on
+  B. It sustains for as long as the key is down and falls away when it is
+  released.
+- Pitch verified against the note (262 Hz for a played C4), DC blocked at 12 Hz
+  in the loop, four 1024-sample delay lines in the oscillator slot's memory.
+
+## irbody — 1.2-0
+
+- The wet signal is stereo. The tail comes from two points of the corpus and the
+  modes take a short detour on the right; the channels average back to the level
+  the unit had before.
+- The A knob is a continuum: between two bodies the damping, brightness, level
+  and size glide, so families walk into each other instead of stepping.
+- Levels fitted per body, within 4 dB over the whole travel.
+
 ## resonator — 1.5-0
 
 - The synth's LFO reaches the unit at last: it is added to the decay knob (the

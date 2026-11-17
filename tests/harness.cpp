@@ -19,6 +19,8 @@ static const int kBlock = 64;
 static const int kSamples = 48000 * 2;
 static const double kRate = 48000.0;
 static float gOut[kSamples];
+static float gOutL[kSamples];
+static float gOutR[kSamples];
 static int gLo[8], gHi[8], gKnobs = 8, gModels = 0;
 
 // ------------------------------------------------------------------ the unit
@@ -78,14 +80,21 @@ static void unitRender(float *out, int n) {
     float in[kBlock], yl[kBlock], yr[kBlock];
     for (int i = 0; i < kBlock; ++i) in[i] = srcAt(gPos + i);
     _hook_process(in, yl, in, yr, kBlock);
-    for (int i = 0; i < kBlock && done < n; ++i) out[done++] = 0.5f * (yl[i] + yr[i]);
+    for (int i = 0; i < kBlock && done < n; ++i) {
+      out[done] = 0.5f * (yl[i] + yr[i]);
+      gOutL[done] = yl[i];
+      gOutR[done++] = yr[i];
+    }
 #else
     // Delay and reverb buffers hold frames of two interleaved samples.
     float io[2 * kBlock];
     for (int i = 0; i < kBlock; ++i) io[2 * i] = io[2 * i + 1] = srcAt(gPos + i);
     _hook_process(io, kBlock);
-    for (int i = 0; i < kBlock && done < n; ++i)
-      out[done++] = 0.5f * (io[2 * i] + io[2 * i + 1]);
+    for (int i = 0; i < kBlock && done < n; ++i) {
+      out[done] = 0.5f * (io[2 * i] + io[2 * i + 1]);
+      gOutL[done] = io[2 * i];
+      gOutR[done++] = io[2 * i + 1];
+    }
 #endif
     gPos += kBlock;
   }
@@ -153,9 +162,33 @@ static void reportBands(const char *tag, const float *x, int at) {
 
 // ------------------------------------------------------------------ scenarios
 
+// The same question above 2 kHz, where two points of a corpus actually differ:
+// a body's low resonances are one object and stay correlated, its upper partials
+// do not.
+static void highpassCopy(const float *x, float *y, int n) {
+  float lp = 0.f;
+  const float a = 1.f - expf(-2.f * (float)M_PI * 2000.f / (float)kRate);
+  for (int i = 0; i < n; ++i) {
+    lp += (x[i] - lp) * a;
+    y[i] = x[i] - lp;
+  }
+}
+
 static void renderInto(float *out, int n) {
-  for (int i = 0; i < n; ++i) out[i] = 0.f;
+  for (int i = 0; i < n; ++i) out[i] = gOutL[i] = gOutR[i] = 0.f;
   unitRender(out, n);
+}
+
+// How much the two channels differ: 1 is mono, 0 is as wide as it gets.
+static double correlation(const float *l, const float *r, int n) {
+  double a = 0, b = 0, ab = 0;
+  for (int i = 0; i < n; ++i) {
+    a += (double)l[i] * l[i];
+    b += (double)r[i] * r[i];
+    ab += (double)l[i] * r[i];
+  }
+  if (a < 1e-12 || b < 1e-12) return 1.0;
+  return ab / sqrt(a * b);
 }
 
 static void setNominal() {
@@ -195,6 +228,17 @@ int main(int argc, char **argv) {
   printf("rms_late %.4f\n", rmsOf(gOut + (int)(1.2 * kRate), kWindow));
   printf("peak %.3f\n", peakOf(gOut, kSamples));
   printf("nan %d\n", nanCount(gOut, kSamples));
+  // The width is measured on the wet alone, once the input has stopped: with
+  // dry signal in the picture every channel looks the same by definition.
+  runNominal(gKnobs > 3 ? 3 : -1, gKnobs > 3 ? gHi[3] : 0);
+  printf("corr %.3f\n", correlation(gOutL + windowTail(), gOutR + windowTail(), kWindow));
+  {
+    static float hl[kSamples], hr[kSamples];
+    highpassCopy(gOutL + windowTail(), hl, kWindow);
+    highpassCopy(gOutR + windowTail(), hr, kWindow);
+    printf("corr_hi %.3f\n", correlation(hl, hr, kWindow));
+  }
+  unitNoteOff();
   reportBands("bands", gOut, windowAttack());
   reportBands("bands_tail", gOut, windowTail());
   unitNoteOff();

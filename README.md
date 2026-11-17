@@ -67,6 +67,7 @@ where that chain does the most for it.
 | --- | --- | --- | --- |
 | OSC | — | `noise` | the only slot that makes sound, and it needs no note to do it |
 | OSC | — | `resonator` | the only slot that is handed the note and sits inside the amp envelope, which is what makes a struck object playable |
+| OSC | — | `bowed` | the only slot that is handed the note and keeps sounding for as long as the key is down; nothing later in the chain can make a struck sound sustain |
 | MOD | amp/EG | `lpg` | first slot after the amp envelope, so the follower hears the shape of the note, which is exactly what a vactrol gate wants. The NTS-1 has no user filter or EG slot |
 | MOD | amp/EG | `reso`, `elements` | they turn the oscillator into an instrument, so everything time based should come after them |
 | DELAY | mod | `barber` | a phaser belongs before the reverb, and it needs the dry/wet knob that only a delay or reverb unit gets; a modulation effect has no shift-depth parameter |
@@ -213,6 +214,41 @@ still bends; a note that jumps far enough to put a bank into a runaway drops tha
 bank instead of passing a NaN on. Four notes at once are not four times as loud:
 a single voice keeps its level and the rest are tucked in under it.
 
+### bowed — oscillator (a sustained note)
+
+Everything else here answers a hit. `bowed` is the one that keeps going: a delay
+loop of one period is rubbed by a bow of filtered noise plus one small push per
+period, and the loop's losses decide how long the note takes to speak and how it
+dies. Four voices, because a chord of sustained notes is the point.
+
+| Control | Function |
+| --- | --- |
+| A (SHAPE) | bow pressure: how hard it presses and how fast it drags |
+| B (SHIFT) | brightness: the loop's damping |
+| Edit 1 | `Model`: string, metal, pipe, hum, glass (the menu counts from 1) |
+| Edit 2 | `Bow`: pressure, separately from A |
+| Edit 3 | `Rosin`: how much of the bow's noise reaches the loop |
+| Edit 4 | `Tune`: ± 24 semitones |
+| Edit 5 | `Level` |
+| Edit 6 | `Attack`: how long the bow takes to catch the string |
+
+The five models are the loop's character — how lossy it is, where the body sits,
+how much noise gets through — and each one was measured to move the sound: every
+model answers the brightness knob by at least 18 dB in some band, and the whole
+travel of every knob moves something by 13 dB or more.
+
+Three things had to be measured rather than assumed. **Pitch:** a delay loop
+that is fed a constant collects DC and then sings at whatever the body resonates
+at — the first version had a 0.19 DC offset and a drone around the body
+frequency. The push per period is a pulse now, and a one pole at 12 Hz takes DC
+out of the loop itself; a played C4 measures 262 Hz against the 261.6 it should
+be. **Sustain:** with the key down the level settles and stays (measured over two
+seconds), and after the key comes up it falls to nothing within two seconds.
+**Size:** four delay loops of 1024 samples is 16 KB, which is the largest
+allocation in this collection and still fits the oscillator slot's 32 KB.
+
+It costs 24 ns/frame with one voice and 79 with four.
+
 ### lpg — modulation effect (low pass gate)
 
 A vactrol style gate: whatever arrives at the MOD slot opens both a VCA and a
@@ -269,6 +305,23 @@ the notches into the classic jet sound.
 | A (TIME) | rate and direction: left of centre falls, right of centre rises, further out is faster (0.02 .. 10 Hz) |
 | B (DEPTH) | feedback / resonance |
 | DEL + B | dry/wet — around the middle gives the deepest notches |
+
+### irbody — reverb effect (instrument bodies)
+
+The wet signal is stereo now. Two points on a corpus do not hear the same
+thing: the tail is read from the four delay lines a few samples apart and goes
+through a long allpass on the difference, and the modes themselves take a
+quarter of a millisecond detour on the right. Measured over the tails: the two
+channels correlate between 0.46 and 0.99 depending on how diffuse the body is —
+a wood block is wide, a drum is a point — and the two average back to the level
+the unit had before.
+
+The A knob is a continuum. It still picks the family, but between two bodies the
+damping, brightness, level and size glide from one into the next, so a violin
+can be walked into a cello instead of jumping. The mode ratios stay with the
+nearest body, because half of one body's partials with half of another's is
+neither. Levels are fitted per body (measured on the host, within 4 dB over the
+whole travel) so turning the knob does not change how loud you are.
 
 ### irbody — reverb effect (instrument bodies)
 
@@ -359,14 +412,14 @@ without having to think about it:
   `elements` build theirs. Switching a program never builds
   anything while sound is running.
 * **Suspend and resume leave silence.** After a resume nothing comes out of
-  stale state (measured: 0.0000 from all six). A unit that is suspended loses
+  stale state (measured: 0.0000 from all of the effect units). A unit that is suspended loses
   its tail rather than replaying it later.
 * **No non-finite samples.** Each unit was hammered with 20 000 random
   parameter jumps across the full range of every control, mid-stream: no NaN and
   no infinity in the output. `reso` and `elements` guard their mode banks — if a
   jump moves the modes so far under a ringing bank that it starts to run away,
   the bank is dropped instead of passing a NaN down the chain.
-* **Bounded output.** All six end in a soft clip, so a slot cannot hand the next
+* **Bounded output.** Every unit ends in a soft clip, so a slot cannot hand the next
   one more than full scale.
 * **No maths library.** A single call into libm is enough for the linker to pull
   newlib's reentrancy struct into the image: about a kilobyte of RAM and a few
@@ -388,6 +441,7 @@ those helpers are table lookups.
 | --- | --- | --- | --- |
 | `noise` | 5.7 KB | 0.4 KB | 15 ns/frame |
 | `resonator` | 4.9 KB | 1.5 KB | 19 ns/frame (71 with four voices) |
+| `bowed` | 7.0 KB | 16.6 KB | 24 ns/frame (79 with four voices) |
 | `lpg` | 1.6 KB | 0.1 KB | 27 ns/frame |
 | `reso` | 1.5 KB | 0.4 KB | 13 ns/frame |
 | `elements` | 2.1 KB | 0.7 KB | 18 ns/frame |
