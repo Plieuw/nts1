@@ -376,7 +376,7 @@ inline float hybridNoise() {
 inline float transientSample() {
   // At a band edge the level is zero: stay out of the noise stream entirely, so
   // "no transient" really is no transient.
-  if (s.trans_env <= 1e-4f || s.trans_level <= 0.f)
+  if (s.trans_env <= 1e-4f || s.trans_level < 1e-4f)
     return 0.f;
 
   const float n = osc_white();
