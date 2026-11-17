@@ -12,8 +12,13 @@
  *
  * The convolution is partitioned in the frequency domain (16 x 256 taps, FFT
  * size 512), which costs a fraction of what direct convolution of the same
- * 85 ms response would need. Only the real halves of the spectra are kept out
- * of the product sum, everything stays in SDRAM.
+ * 85 ms response would need.
+ *
+ * Every response is transformed once at load time and kept in SDRAM, so turning
+ * the body knob does not have to build anything in the audio callback. A switch
+ * crossfades between two partition sets over 85 ms instead: both convolutions
+ * run from the same input spectra and their outputs are mixed, which is exactly
+ * a crossfade of the two responses and cannot click.
  *
  * A-knob (TIME)   which response: violin, cello, piano, guitar, wood, steel,
  *                 room, plate
@@ -28,12 +33,14 @@
 namespace {
 
 constexpr float kFs = 48000.f;
+constexpr float kPi = 3.14159265358979f;
 
 constexpr int kFFT = 512;                     // FFT size
 constexpr int kHop = 256;                     // samples per block (5.3 ms latent)
 constexpr int kParts = 16;                    // -> 4096 taps, 85.3 ms
 constexpr int kIrLen = irmodel::kIrLen;
 constexpr int kPresetCount = irmodel::kPresetCount;
+constexpr int kFadeSamples = 4096;            // 85 ms crossfade on a switch
 
 // The .sdram section is not zeroed at load time, so everything here is cleared
 // explicitly in DELFX_INIT().
@@ -45,21 +52,23 @@ float g_re[kFFT] __sdram;
 float g_im[kFFT] __sdram;
 float g_xre[kParts][kFFT] __sdram;
 float g_xim[kParts][kFFT] __sdram;
-float g_hre[kParts][kFFT] __sdram;
-float g_him[kParts][kFFT] __sdram;
+float g_hre[kPresetCount][kParts][kFFT] __sdram;
+float g_him[kPresetCount][kParts][kFFT] __sdram;
 float g_out[kHop] __sdram;
 float g_pending[kHop] __sdram;
 float g_dry[kHop] __sdram;
 
 struct State {
-  int preset;
-  float damp;       // 0..1
-  float wet;        // 0..1
+  int active;   // response currently in the output
+  int target;   // response fading in, -1 when not fading
+  int queued;   // last request that arrived during a fade, -1 when none
+  float fade;   // 0..1, position of the crossfade
+  float damp;   // 0..1
+  float wet;    // 0..1
   float damp_coef;
   float damp_lp;
   int pos;
   int ring;
-  bool need_ir;
 };
 
 State s;
@@ -114,10 +123,14 @@ void fft(float *re, float *im, bool inverse) {
 }
 
 /*---------------------------------------------------------------------------*
- * Convolution
+ * Responses
  *---------------------------------------------------------------------------*/
 
-void computePartitions() {
+// Transforms one response into its partition spectra. Only ever called from
+// DELFX_INIT(), where taking a few milliseconds is fine.
+void buildPartitions(int preset) {
+  irmodel::render(g_ir, preset);
+
   for (int p = 0; p < kParts; ++p) {
     for (int i = 0; i < kFFT; ++i) {
       g_re[i] = 0.f;
@@ -129,19 +142,29 @@ void computePartitions() {
     fft(g_re, g_im, false);
 
     for (int i = 0; i < kFFT; ++i) {
-      g_hre[p][i] = g_re[i];
-      g_him[p][i] = g_im[i];
+      g_hre[preset][p][i] = g_re[i];
+      g_him[preset][p][i] = g_im[i];
+    }
+  }
+}
+
+// Adds one response's contribution, scaled by w, to the spectrum of the block.
+void accumulate(const float (*hre)[kFFT], const float (*him)[kFFT], float w) {
+  for (int p = 0; p < kParts; ++p) {
+    const int idx = (s.ring - p + kParts) % kParts;
+    const float *xr = g_xre[idx];
+    const float *xi = g_xim[idx];
+    const float *hr = hre[p];
+    const float *hi = him[p];
+
+    for (int i = 0; i < kFFT; ++i) {
+      g_re[i] += w * (hr[i] * xr[i] - hi[i] * xi[i]);
+      g_im[i] += w * (hr[i] * xi[i] + hi[i] * xr[i]);
     }
   }
 }
 
 void runBlock() {
-  if (s.need_ir) {
-    irmodel::render(g_ir, s.preset);
-    computePartitions();
-    s.need_ir = false;
-  }
-
   for (int i = 0; i < kFFT - kHop; ++i)
     g_in[i] = g_in[i + kHop];
   for (int i = 0; i < kHop; ++i)
@@ -161,29 +184,36 @@ void runBlock() {
     g_im[i] = 0.f;
   }
 
-  for (int p = 0; p < kParts; ++p) {
-    const int idx = (s.ring - p + kParts) % kParts;
-    const float *xr = g_xre[idx];
-    const float *xi = g_xim[idx];
-    const float *hr = g_hre[p];
-    const float *hi = g_him[p];
+  const bool fading = (s.target >= 0);
+  const float w = fading ? s.fade : 0.f;
 
-    for (int i = 0; i < kFFT; ++i) {
-      g_re[i] += hr[i] * xr[i] - hi[i] * xi[i];
-      g_im[i] += hr[i] * xi[i] + hi[i] * xr[i];
-    }
-  }
+  accumulate(g_hre[s.active], g_him[s.active], fading ? 1.f - w : 1.f);
+  if (fading)
+    accumulate(g_hre[s.target], g_him[s.target], w);
 
   fft(g_re, g_im, true);
 
   for (int i = 0; i < kHop; ++i)
     g_out[i] = g_re[kFFT - kHop + i];
+
+  if (fading) {
+    s.fade += (float)kHop / (float)kFadeSamples;
+    if (s.fade >= 1.f) {
+      s.active = s.target;
+      s.target = -1;
+      s.fade = 0.f;
+      if (s.queued >= 0) {
+        s.target = s.queued;
+        s.queued = -1;
+      }
+    }
+  }
 }
 
 void updateDamping() {
   const float fc = 1200.f * expf(2.71f * s.damp);  // 1.2 kHz .. 18 kHz
-  s.damp_coef = 1.f - expf(-2.f * 3.14159265358979f *
-                           clipminmaxf(200.f, fc, 0.45f * kFs) / kFs);
+  s.damp_coef =
+      1.f - expf(-2.f * kPi * clipminmaxf(200.f, fc, 0.45f * kFs) / kFs);
 }
 
 void clearBuffers() {
@@ -196,8 +226,6 @@ void clearBuffers() {
     for (int i = 0; i < kFFT; ++i) {
       g_xre[p][i] = 0.f;
       g_xim[p][i] = 0.f;
-      g_hre[p][i] = 0.f;
-      g_him[p][i] = 0.f;
     }
   }
   for (int i = 0; i < kHop; ++i) {
@@ -221,20 +249,24 @@ void DELFX_INIT(uint32_t platform, uint32_t api) {
   (void)api;
 
   for (int i = 0; i < kFFT / 2; ++i) {
-    const float a = 2.f * 3.14159265358979f * (float)i / (float)kFFT;
+    const float a = 2.f * kPi * (float)i / (float)kFFT;
     g_twre[i] = cosf(a);
     g_twim[i] = -sinf(a);
   }
 
-  s.preset = 0;
+  s.active = 0;
+  s.target = -1;
+  s.queued = -1;
+  s.fade = 0.f;
   s.damp = 0.7f;
   s.wet = 0.5f;
-  s.need_ir = false;
 
   updateDamping();
   clearBuffers();
-  irmodel::render(g_ir, s.preset);
-  computePartitions();
+
+  // One pass at load time; nothing is built while audio is running.
+  for (int p = 0; p < kPresetCount; ++p)
+    buildPartitions(p);
 }
 
 void DELFX_PROCESS(float *xn, uint32_t frames) {
@@ -271,9 +303,16 @@ void DELFX_PARAM(uint8_t index, int32_t value) {
     const int sel = (int)clipminmaxf(
         0.f, (float)value * (1.f / 1023.f) * (float)kPresetCount,
         (float)(kPresetCount - 1));
-    if (sel != s.preset) {
-      s.preset = sel;
-      s.need_ir = true;
+
+    if (sel != s.active && sel != s.target) {
+      // While a crossfade runs, remember only the latest request: the knob
+      // sends a stream of values and we do not want a crossfade per value.
+      if (s.target >= 0)
+        s.queued = sel;
+      else {
+        s.target = sel;
+        s.fade = 0.f;
+      }
     }
     break;
   }
@@ -294,6 +333,9 @@ void DELFX_PARAM(uint8_t index, int32_t value) {
 
 void DELFX_SUSPEND(void) {
   clearBuffers();
+  s.target = -1;
+  s.queued = -1;
+  s.fade = 0.f;
 }
 
 void DELFX_RESUME(void) {}

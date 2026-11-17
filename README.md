@@ -139,6 +139,14 @@ Block processing adds 5.3 ms of latency, which the dry path is delayed by as
 well so the two stay aligned. Responses end with a short fade, so the cut at
 85 ms is not audible.
 
+All eight responses are transformed once, when the unit loads — that is where
+the SDRAM goes, about 600 KB for the spectra — so turning the body knob never
+builds anything while audio is running. A change instead crossfades between the
+old and the new response over 85 ms: both convolutions run from the same input
+spectra and their outputs are mixed, which is exactly a crossfade of the two
+responses and cannot click. Intermediate knob positions are skipped while a
+crossfade runs, so whipping the knob around does not queue up a fade per value.
+
 ## Installing on the NTS-1
 
 The unit files are `*.ntkdigunit` packages. Load them with either
@@ -202,7 +210,8 @@ so your units cannot collide with someone else's.
   are capped at 85 ms because that is what fits in the partitioned convolution.
   Longer spaces need the stock reverb after it.
 * The mkI gives a modfx unit 6 KB of SRAM and a delfx unit 12 KB of code space
-  plus 2.4 MB of SDRAM; all units stay well inside those budgets.
+  plus 2.4 MB of SDRAM; all units stay well inside those budgets. `irbody` uses
+  about 600 KB of that SDRAM to keep all eight responses precomputed.
 
 ## License
 
