@@ -506,7 +506,7 @@ are table lookups.
 | `reso` | 1.5 KB | 0.4 KB | 13 ns/frame |
 | `elements` | 2.1 KB | 0.7 KB | 18 ns/frame |
 | `barber` | 1.8 KB | 0.3 KB | 45 ns/frame |
-| `irbody` | 7.0 KB | 52 KB SDRAM | 30 ns/frame |
+| `irbody` | 3.6 KB | 52 KB SDRAM | 30 ns/frame |
 
 ## Installing on the NTS-1
 
@@ -579,7 +579,7 @@ unit, with the reverb's SDRAM counted separately — and fails if one grew past
 it. `tools/check_budget.py` prints the numbers:
 
 ```
-irbody      11656 /  12288 bytes of revfx memory  ok
+irbody       4980 /  12288 bytes of revfx memory  ok
 bowed       19524 /  32768 bytes of osc memory  ok
 ```
 
@@ -591,14 +591,14 @@ maths library:
 
 ```
 barber       1924 /  12288 bytes of delfx  memory  ok    libm: none
-irbody      11656 /  12288 bytes of revfx  memory  ok    libm: 6 allowed (ir_model.h)
+irbody       4980 /  12288 bytes of revfx  memory  ok    libm: none
 ```
 
 Both snippets are what CI prints, which is the gcc 5.4 the instrument is built
-with; the newer gcc in a sandbox builds several units smaller (`irbody` to 8276),
-so the gate is the stricter of the two. It is worth looking at `irbody`'s line:
-632 bytes of headroom is the smallest in the collection, and its libm is most of
-what stands between it and the wall.
+with; the newer gcc in a sandbox builds several units smaller, so the gate is the
+stricter of the two. `irbody` used to be the tight one — 632 bytes of headroom
+left, nearly all of it spent on the maths library — and taking that out is what
+gave it back 6.6 KB.
 
 `tools/cycles.py` is the other half of that: it prices a range of any unit's
 disassembly with the Cortex-M4's instruction timings, which is where `bowed`'s
@@ -608,11 +608,28 @@ One `cosf` in a loop is not a small thing here. It costs a few hundred cycles pe
 sample, it pulls newlib's sine kernels in (4 KB of the oscillator slot's 32 KB,
 which is what `bowed` was carrying until it stopped calling it per sample), and
 it brings the reentrancy struct along, which is a kilobyte of RAM in a slot that
-has 6 or 12. `irbody` is the single exception and it is listed in the tool with
-the symbols it links today: it builds its coefficients from `ir_model.h`, which
-is written in `sinf`, `cosf`, `expf`, `powf` and `sqrtf` for the sake of the WAV
-generator that shares it. Anything beyond those six names fails, including a new
-call in `irbody` itself.
+has 6 or 12. There are no exceptions left: `irbody` was the last unit with an
+allowance, for two calls — `powf` for a level in decibels and `sqrtf` for the
+midpoint between two bodies — and both are polynomials in
+`units/common/arcmath.h` now. `ir_model.h`'s renderer, which is written in
+`sinf`/`cosf`/`expf` for the sake of the WAV generator, is behind
+`IRMODEL_RENDER` and is not compiled into the unit at all.
+
+What each unit file links, from `nm` over the ELFs CI builds:
+
+| Unit | Symbols from outside the unit | Undefined |
+| --- | --- | --- |
+| `barber` | none | none |
+| `bowed` | none | none |
+| `elements` | none | none |
+| `irbody` | none | none |
+| `lpg` | none | none |
+| `noise` | `___osc_mcu_hash_veneer`, `___osc_white_veneer` | none |
+| `reso` | none | none |
+| `resonator` | `___osc_mcu_hash_veneer` | none |
+
+The three veneers are the loader's stubs for SDK calls — `osc_white` and
+`osc_mcu_hash` — not library code. Everything else each unit needs, it carries.
 
 ## Changing the identity of a unit
 
@@ -643,11 +660,10 @@ so your units cannot collide with someone else's.
   convolution stopped after 85 ms.
 * The mkI gives a modfx unit 6 KB of SRAM and a delay or reverb unit 12 KB of
   code space plus 2.4 MB of SDRAM; all units stay well inside those budgets now
-  that none of them links the maths library. `irbody` uses 46 KB of that SDRAM
-  for its delay lines, and is the one unit that still carries libm (about 1 KB of
-  RAM and 2 KB of code): it builds its coefficients from `ir_model.h`, which uses
-  `sinf`, `cosf` and `expf` to describe the objects, and that header is shared
-  with the WAV generator.
+  that none of them links the maths library. `irbody` uses 52 KB of that SDRAM for
+  its delay lines and 4980 bytes of its 12288, which it did not before: the unit
+  that carried libm for its `powf` and `sqrtf` carried 6676 bytes more than this
+  one does.
 
 ## License
 

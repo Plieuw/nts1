@@ -40,9 +40,10 @@ Older history is in the commit log.
   from a decibel figure and the geometric midpoint between two bodies — are
   `arc_dbtolevel` and `arc_sqrtf` from units/common/arcmath.h now, and the impulse
   response renderer in ir_model.h is behind IRMODEL_RENDER, since that is the WAV
-  generator's code and not the unit's. 3276 bytes of SRAM less in a slot that has
-  12288, and the package is 1.7 KB smaller. `nm` on the unit file finds nothing;
-  the recorded measurements differ in one band, by 0.1 dB, at -150 dB.
+  generator's code and not the unit's. On the gcc 5.4 build the instrument gets:
+  4980 bytes of SRAM where there were 11656, and a 4252 byte package where there
+  were 8361. `nm` on the unit file finds nothing; the recorded measurements differ
+  in one band, by 0.1 dB, at -150 dB.
 
 ## irbody — 1.2-0
 
