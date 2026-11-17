@@ -23,6 +23,9 @@ namespace {
 constexpr int kModes = 12;
 constexpr float kFs = 48000.f;
 
+// The bank normally sums to well below one; anything past this is a runaway.
+constexpr float kBankLimit = 100.f;
+
 // Small, libm free helpers: the 6 KB SRAM budget of a modfx unit does not
 // leave room for the full maths library.
 inline float pow2f(float x) {
@@ -133,6 +136,17 @@ void processChannel(const float *xn, float *yn, uint32_t frames, Channel &c) {
       c.y2[n] = c.y1[n];
       c.y1[n] = y;
       acc += y;
+    }
+
+    // A big jump of the knobs moves the poles under the state that is already
+    // ringing, and a high bank can then grow by a factor of a few per sample:
+    // from silence to infinity in well under a millisecond. Legitimate audio
+    // never gets near this, so when it happens the bank is dropped instead of
+    // being allowed to put a NaN into the slot. The input re-excites it on the
+    // very next sample.
+    if (!(acc > -kBankLimit && acc < kBankLimit)) {
+      clearChannel(c);
+      acc = 0.f;
     }
 
     yn[i] = fx_softclipf(0.15f, acc * out_gain);

@@ -28,6 +28,9 @@ namespace {
 constexpr int kModes = 16;
 constexpr float kFs = 48000.f;
 
+// The bank normally sums to well below one; anything past this is a runaway.
+constexpr float kBankLimit = 100.f;
+
 // Small, libm free helpers: the 6 KB SRAM budget of a modfx unit does not
 // leave room for the full maths library.
 inline float pow2f(float x) {
@@ -114,7 +117,12 @@ void updateCoefficients() {
   const float t = g - (float)i0;
 
   const float f0 = 40.f * pow2f(5.644f * s.pitch);   // 40 Hz .. 2 kHz
-  const float tau = 0.35f * pow2f(3.f * g);          // 0.35 s .. 2.8 s
+  // Decay time constant of the fundamental. The range is wide on purpose: the
+  // string end damps away in a third of a second, the bell end rings for
+  // minutes, and damping shortens the higher modes on top of that. The very
+  // top of the range is a sustain rather than a bell, which is what makes the
+  // plate and bell end usable as a pad when you hold a note.
+  const float tau = 0.35f * pow2f(3.f * g);
   const float damp = 0.30f - 0.05f * g;              // harder geometries ring longer
 
   int active = 0;
@@ -177,6 +185,15 @@ void processChannel(const float *xn, float *yn, uint32_t frames, Channel &c) {
       c.y2[n] = c.y1[n];
       c.y1[n] = y;
       acc += y;
+    }
+
+    // Moving the geometry or the pitch jumps the modes under the ringing
+    // state, and a high bank can then grow by a factor of a few per sample.
+    // Legitimate audio never gets near this limit, so a runaway bank is simply
+    // dropped rather than allowed to put a NaN into the slot.
+    if (!(acc > -kBankLimit && acc < kBankLimit)) {
+      clearChannel(c);
+      acc = 0.f;
     }
 
     yn[i] = fx_softclipf(0.15f, acc * out_gain);

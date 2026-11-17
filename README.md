@@ -16,9 +16,10 @@ instrument has.
 | `irbody` | REVERB | Convolution with modelled instrument bodies and spaces | `irbody.ntkdigunit` |
 
 The NTS-1 has one slot per type, so `lpg`, `reso` and `elements` are
-alternatives for each other. `barber` and `irbody` are not: they live in
-different slots, so they can run together, and either of them can be combined
-with any of the modulation units.
+alternatives for each other. `barber` and `irbody` are alternatives too, for a
+reason that is easy to miss: on the mkI a custom **delay** and a custom
+**reverb** are loaded into the same runtime, so only one of the two can be a
+custom effect at a time (see [Stacking the units](#stacking-the-units)).
 
 Note that there is no user slot for an envelope generator on the NTS-1: the MOD
 slot only accepts (audio) modulation effects. `lpg` is the way to get an
@@ -36,7 +37,7 @@ where that chain does the most for it.
 | MOD | amp/EG | `lpg` | first slot after the amp envelope, so the follower hears the shape of the note, which is exactly what a vactrol gate wants. The NTS-1 has no user filter or EG slot |
 | MOD | amp/EG | `reso`, `elements` | they turn the oscillator into an instrument, so everything time based should come after them |
 | DELAY | mod | `barber` | a phaser belongs before the reverb, it needs the shift-depth mix that the MOD slot does not have, and its 6.9 KB of code does not fit in the 6 KB MOD budget |
-| REVERB | delay | `irbody` | a space belongs at the end of the chain, and a reverb unit gets the same 12 KB of code, 2.4 MB of SDRAM and shift-depth mix as a delay unit. Leaving the delay slot free means `barber` or an echo can run next to it |
+| REVERB | delay | `irbody` | a space belongs at the end of the chain, and a reverb unit gets the same 12 KB of code, 2.4 MB of SDRAM and shift-depth mix as a delay unit |
 
 ## The units
 
@@ -183,6 +184,69 @@ old and the new response over 85 ms: both convolutions run from the same input
 spectra and their outputs are mixed, which is exactly a crossfade of the two
 responses and cannot click. Intermediate knob positions are skipped while a
 crossfade runs, so whipping the knob around does not queue up a fade per value.
+
+## Stacking the units
+
+The NTS-1 chain is oscillator → filter → amp/EG → modulation → delay → reverb,
+and every unit only ever sees the audio of what comes before it. Nothing here
+depends on its neighbours, so a unit can sit next to the stock effects, next to
+someone else's unit, or next to another one of these.
+
+What the mkI *does* constrain is which slots can be full at the same time:
+
+| Combination | Works | Why |
+| --- | --- | --- |
+| any one of `lpg`, `reso`, `elements` | yes | there is one MOD slot, so they are alternatives |
+| `noise` with any of them | yes | the oscillator and the effect slots are independent |
+| `barber` in DELAY with a stock reverb | yes | a stock delay and a stock reverb do not collide |
+| `irbody` in REVERB with a stock delay | yes | same |
+| `barber` **and** `irbody` together | **no** | on the mkI a custom delay and a custom reverb are loaded into the same runtime: the SDK notes that when both are enabled only one of them can be a custom effect, and enabling both anyway has been reported to make them malfunction. Pick one, and put a stock effect in the other slot |
+
+So a full house is `noise`, one of the three modulators, and one of `barber` or
+`irbody` — with the remaining effect slot on a stock type.
+
+### What each unit promises its slot
+
+The point of the list below is that you can drop any of them next to anything
+without having to think about it:
+
+* **Any block size.** Every unit was run with frame counts from 1 to 96, in
+  place, without a glitch, a NaN or an overrun; none of them assumes the 32 or
+  64 frames the stock host happens to send.
+* **Parameters in any order.** A knob value that arrives before the unit is
+  initialised is kept, and initialising twice is harmless — the state is zeroed
+  and the latched values are applied, so an early program change cannot leave a
+  unit half set up.
+* **Nothing but audio in the audio callback.** Everything expensive happens in
+  the init callback: `irbody` transforms its eight responses there, `reso` and
+  `elements` build their coefficients there. Switching a program never builds
+  anything while sound is running.
+* **Suspend and resume leave silence.** After a resume nothing comes out of
+  stale state (measured: 0.0000 from all six). A unit that is suspended loses
+  its tail rather than replaying it later.
+* **No non-finite samples.** Each unit was hammered with 20 000 random
+  parameter jumps across the full range of every control, mid-stream: no NaN and
+  no infinity in the output. `reso` and `elements` guard their mode banks — if a
+  jump moves the modes so far under a ringing bank that it starts to run away,
+  the bank is dropped instead of passing a NaN down the chain.
+* **Bounded output.** All six end in a soft clip, so a slot cannot hand the next
+  one more than full scale.
+* **Tails end.** Ten seconds after the last note every tail has fallen below
+  -70 dB (the longest are `reso` at its 5 s ring time and `elements` at its
+  bell end, which is a very quiet but very long sustain by design).
+
+Measured on the host (x86, gcc 10.3, minimum of pinned runs, one 64 frame block
+at 48 kHz is 1.333 ms); the numbers are a comparison between the units, not an
+M4 prediction:
+
+| Unit | Text + data | SRAM | Cost |
+| --- | --- | --- | --- |
+| `noise` | 11.7 KB | 0.4 KB | 15 ns/frame |
+| `lpg` | 1.5 KB | 0.1 KB | 13 ns/frame |
+| `reso` | 1.5 KB | 0.4 KB | 13 ns/frame |
+| `elements` | 3.1 KB | 0.7 KB | 17 ns/frame |
+| `barber` | 7.8 KB | 0.3 KB | 45 ns/frame |
+| `irbody` | 10.5 KB | 603 KB SDRAM | 56 ns/frame |
 
 ## Installing on the NTS-1
 
