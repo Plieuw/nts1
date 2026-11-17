@@ -569,8 +569,11 @@ Prefer the SDK's own layout? Copy a `units/<name>` directory into
 in the Makefile then line up.
 
 `.github/workflows/build.yml` builds all units on every push and uploads them as
-an artifact, which is what a release is cut from: the eight packages in the beta
-are that artifact, unmodified.
+an artifact. Cutting a release is pushing a tag: the same workflow builds the
+units with gcc 5.4 and attaches the eight packages to a release, creating it with
+the commit list as its notes if it does not exist yet. A tag with a suffix
+(`v0.2.0-beta`) makes a prerelease, and a release published by hand gets its
+packages the same way.
 
 ## Memory budgets
 

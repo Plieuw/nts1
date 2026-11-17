@@ -18,6 +18,10 @@ jobs:
 
   units:
     runs-on: ubuntu-22.04
+    # Only the release step needs this, and only for tags; the build itself reads
+    # the checkout.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -45,8 +49,30 @@ jobs:
             units/*/build/*.elf
           if-no-files-found: error
 
+      # Cutting a beta is pushing a tag: this is the build the instrument gets,
+      # and these are its files. A release published by hand takes the same path
+      # as an existing release, so both ways end with the eight packages on it.
+      # Deleting a tag fires a push event too, hence the deleted check.
       - name: Attach units to the release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || (startsWith(github.ref, 'refs/tags/v') && !github.event.deleted)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.event.release.tag_name }}" dist/*.ntkdigunit --clobber
+        run: |
+          set -eu
+          tag="${{ github.event.release.tag_name || github.ref_name }}"
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "$tag exists, replacing its packages"
+            gh release upload "$tag" dist/*.ntkdigunit --clobber
+            exit 0
+          fi
+
+          # A tag with a suffix in it is a test of the thing, not a finished
+          # release: v0.2.0-beta, v1.0.0-rc1. The notes are the commit list, to
+          # be edited afterwards.
+          flags=""
+          case "$tag" in
+            *-*) flags="--prerelease" ;;
+          esac
+          echo "creating $tag ${flags:+(prerelease)}"
+          gh release create "$tag" dist/*.ntkdigunit --title "$tag" --generate-notes $flags
