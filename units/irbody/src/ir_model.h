@@ -14,6 +14,11 @@
  * tools/make_irs.cpp renders the same model as WAV files in ir/. The WAV files
  * are the reference: the unit's levels were fitted band by band to them.
  *
+ * The renderer below is the WAV generator's, not the unit's. It is behind
+ * IRMODEL_RENDER because it is written with sinf/cosf/expf for readability and
+ * the unit has 12 KB of code for everything: compiling it into the firmware
+ * would pull the maths library in for a function nobody calls there.
+ *
  * Mode ratios: violin, cello and guitar use the air and wood resonances of the
  * real instruments (A0, B1-, B1+ and the bridge hill), the wood preset uses the
  * free-free bar series, the steel preset a plate-like inharmonic series.
@@ -23,8 +28,11 @@
 #ifndef IR_MODEL_H
 #define IR_MODEL_H
 
-#include <math.h>
 #include <stdint.h>
+
+#ifdef IRMODEL_RENDER
+#include <math.h>
+#endif
 
 namespace irmodel {
 
@@ -122,6 +130,7 @@ static const Preset kPresets[kPresetCount] = {
     {"drum", kDrum, 7, 90.f, 0.028f, 0.35f, 0.013f, 0.55f, 0.60f},
 };
 
+#ifdef IRMODEL_RENDER
 static uint32_t s_rng;
 
 static inline float rand01() {
@@ -222,6 +231,7 @@ static void render(float *h, int preset) {
     h[i] *= sc * g;
   }
 }
+#endif  // IRMODEL_RENDER
 
 }  // namespace irmodel
 

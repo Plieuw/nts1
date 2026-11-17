@@ -34,6 +34,16 @@ Older history is in the commit log.
 - Pitch verified against the note (262 Hz for a played C4), DC blocked at 12 Hz
   in the loop, four 1024-sample delay lines in the oscillator slot's memory.
 
+## irbody — 1.3-0
+
+- The unit no longer links the maths library. Its two calls into it — the level
+  from a decibel figure and the geometric midpoint between two bodies — are
+  `arc_dbtolevel` and `arc_sqrtf` from units/common/arcmath.h now, and the impulse
+  response renderer in ir_model.h is behind IRMODEL_RENDER, since that is the WAV
+  generator's code and not the unit's. 3276 bytes of SRAM less in a slot that has
+  12288, and the package is 1.7 KB smaller. `nm` on the unit file finds nothing;
+  the recorded measurements differ in one band, by 0.1 dB, at -150 dB.
+
 ## irbody — 1.2-0
 
 - The wet signal is stereo. The tail comes from two points of the corpus and the

@@ -247,14 +247,14 @@ void buildEngine(int slot, float pos) {
   // two above both of them. Two straight segments through their square root
   // cost a sqrt instead of a pow, which this slot has no room for.
   const Trim &trimA = kTrim[a], &trimB = kTrim[b];
-  const float gb = sqrtf(trimA.bank * trimB.bank);
-  const float gt = sqrtf(trimA.tail * trimB.tail);
+  const float gb = arc_sqrtf(trimA.bank * trimB.bank);
+  const float gt = arc_sqrtf(trimA.tail * trimB.tail);
   const Trim trim = {(t < 0.5f) ? trimA.bank + (gb - trimA.bank) * (2.f * t)
                                 : gb + (trimB.bank - gb) * (2.f * t - 1.f),
                      (t < 0.5f) ? trimA.tail + (gt - trimA.tail) * (2.f * t)
                                 : gt + (trimB.tail - gt) * (2.f * t - 1.f)};
   const float size = kSize[a] + (kSize[b] - kSize[a]) * t;
-  const float level = powf(10.f, (kLevelDb[a] + (kLevelDb[b] - kLevelDb[a]) * t) / 20.f);
+  const float level = arc_dbtolevel(kLevelDb[a] + (kLevelDb[b] - kLevelDb[a]) * t);
   // Both bodies' brightness, not the nearest one's: the mode set jumps at the
   // half step, but brightness is a number and glides the whole way.
   const irmodel::Preset &pa = irmodel::kPresets[a];

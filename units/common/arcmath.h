@@ -46,3 +46,24 @@ inline float arc_cosf(float w) {
   arc_sincos(w, s, c);
   return c;
 }
+
+// sqrt, from a bit pattern and three Newton steps: about 1e-7 relative, which is
+// all a filter coefficient or a level trim needs. The divide is a VDIV (14
+// cycles) and this is only ever called when a knob moves.
+inline float arc_sqrtf(float x) {
+  if (x <= 0.f)
+    return 0.f;
+  union { float f; uint32_t u; } v;
+  v.f = x;
+  v.u = (v.u >> 1) + 0x1fc00000u;
+  float y = v.f;
+  y = 0.5f * (y + x / y);
+  y = 0.5f * (y + x / y);
+  y = 0.5f * (y + x / y);
+  return y;
+}
+
+// 10^(db / 20), the shape every level trim here is written in.
+inline float arc_dbtolevel(float db) {
+  return arc_pow2f(db * 0.1660964f);   // 1/20 * log2(10)
+}

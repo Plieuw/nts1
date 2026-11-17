@@ -33,16 +33,11 @@ MATH = ("cos", "sin", "tan", "asin", "acos", "atan", "atan2", "exp", "log",
         "round", "trunc", "ldexp", "frexp", "scalbn", "remainder")
 MATH_TAIL = ("", "f", "l")
 
-# One deliberate exception, with its reason. `irbody` builds its coefficients
-# from ir_model.h, the same description tools/make_irs.cpp turns into the WAV
-# files, and that header is written in sinf/cosf/expf/powf/sqrtf for readability.
-# fabsf and scalbnf come with powf rather than from the header. Only what the
-# unit links today is listed: anything new fails, and the entry is the first
-# thing to look at when a slot gets tight.
-ALLOWED = {
-    "irbody": {"powf", "sqrtf", "__ieee754_powf", "__ieee754_sqrtf",
-               "fabsf", "scalbnf"},
-}
+# No unit gets an allowance any more: `irbody` was the last one, and it builds its
+# levels and trims from the polynomials in units/common/arcmath.h now. If a unit
+# ever needs one, it goes here with the reason next to it and the exact symbols,
+# never as a blanket exemption.
+ALLOWED = {}
 
 
 def libm_symbol(name):
