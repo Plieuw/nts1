@@ -296,7 +296,7 @@ those helpers are table lookups.
 | Unit | Text + data | SRAM | Cost |
 | --- | --- | --- | --- |
 | `noise` | 5.7 KB | 0.4 KB | 15 ns/frame |
-| `resonator` | 3.7 KB | 0.7 KB | 18 ns/frame |
+| `resonator` | 2.9 KB | 0.7 KB | 18 ns/frame |
 | `lpg` | 1.6 KB | 0.1 KB | 27 ns/frame |
 | `reso` | 1.5 KB | 0.4 KB | 13 ns/frame |
 | `elements` | 2.1 KB | 0.7 KB | 18 ns/frame |
