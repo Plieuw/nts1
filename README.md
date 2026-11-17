@@ -178,7 +178,19 @@ The strike goes straight into the modes instead of through a coupling factor, so
 a short string is not a hundred times louder than a long bell: the decay knob
 changes the length of the note, not its level. The first models the unit had set
 the reference level; every model is fitted to the same measured loudness, so
-switching models does not jump in volume. `Pos` puts a node under the modes
+switching models does not jump in volume.
+
+The keyboard is fitted too, per model. Every semitone from C1 to C7 was measured
+with six strikes per note, because one realisation of the strike noise is not
+enough: a single burst moves the level of a note by up to 8 dB against its
+neighbours, which is the interference of sixteen modes under one attack and not
+a property of the instrument. Averaged, each model gets its own slope and
+curvature in octaves from middle C, fitted through the note it was levelled at.
+That takes the worst deviation from a model's own middle C from 6.5 dB down to
+3.8 dB, with C1 and C7 within a decibel of the middle, and it brings the models
+to within 0.8 to 2.5 dB of each other at every note — before this, a piano and a
+kalimba could be 7 dB apart an octave above middle C. What is left is that same
+mode interference, note by note; there is no smooth curve to fit to it. `Pos` puts a node under the modes
 a real bar would miss, which is the difference between striking a bar in the
 middle and at the end. The attack is normalised over the sum of the modes and
 over the keyboard — the measured 7:1 spread between the bottom and the top of the
@@ -367,7 +379,7 @@ those helpers are table lookups.
 | Unit | Text + data | SRAM | Cost |
 | --- | --- | --- | --- |
 | `noise` | 5.7 KB | 0.4 KB | 15 ns/frame |
-| `resonator` | 4.7 KB | 1.5 KB | 20 ns/frame (69 with four voices) |
+| `resonator` | 4.9 KB | 1.5 KB | 19 ns/frame (71 with four voices) |
 | `lpg` | 1.6 KB | 0.1 KB | 27 ns/frame |
 | `reso` | 1.5 KB | 0.4 KB | 13 ns/frame |
 | `elements` | 2.1 KB | 0.7 KB | 18 ns/frame |

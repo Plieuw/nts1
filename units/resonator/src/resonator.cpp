@@ -207,36 +207,44 @@ static const float kString[kModes] = {
 
 // How a model behaves under the knobs, on top of the shared envelope: decay
 // scales the A knob's time, spread scales how much faster the high modes die
-// than the low ones, and tilt says how much of the strike reaches the top. The
-// gain is the level fit: every model was measured against the same loudness and
-// trimmed to it, so changing model does not change how loud you are.
+// than the low ones, and tilt says how much of the strike reaches the top.
+//
+// gain, reg and bend are the level fit. gain trims the model to the same loudness
+// as the others at middle C. reg and bend correct what the model does over the
+// rest of the keyboard: the shared curve lifts the high notes by a fixed amount
+// per octave, but a bank that keeps its modes up high (a xylophone) swells where
+// one that runs out of modes (a piano) falls away, so each model gets its own
+// slope (reg) and curvature (bend), in octaves from middle C, measured over C1
+// to C7 and fitted through the note the gain was measured at.
 struct ModelSpec {
   const float *ratio;
   float decay;
   float spread;
   float tilt;
   float gain;
+  float reg;
+  float bend;
 };
 
 // Ordered like the model list at the top of the file.
 static const ModelSpec kSpec[kModels] = {
-    {kString, 1.00f, 1.00f, 0.50f, 1.000f},  // 0  string
-    {kMembrane, 1.00f, 1.00f, 0.50f, 1.000f},  // 1  membrane
-    {kBell, 1.00f, 1.00f, 0.50f, 1.000f},  // 2  bell
-    {kKalimba, 1.00f, 1.00f, 0.50f, 1.000f},  // 3  kalimba
-    {kGlass, 1.00f, 1.00f, 0.50f, 1.000f},  // 4  glass
-    {kMarimba, 1.30f, 0.90f, 0.45f, 0.907f},  // 5  marimba
-    {kXylophone, 0.55f, 1.15f, 0.28f, 1.680f},  // 6  xylophone
-    {kVibraphone, 2.40f, 0.55f, 0.55f, 0.791f},  // 7  vibraphone
-    {kPiano, 2.00f, 0.85f, 0.40f, 0.718f},  // 8  piano
-    {kSteelDrum, 1.10f, 0.60f, 0.35f, 1.103f},  // 9  steel drum
-    {kGong, 3.00f, 0.30f, 0.30f, 0.909f},  // 10 gong
-    {kBowl, 3.40f, 0.25f, 0.60f, 0.966f},  // 11 bowl
-    {kTriangle, 2.60f, 0.70f, 0.20f, 1.548f},  // 12 triangle
-    {kWoodblock, 0.22f, 1.60f, 0.60f, 1.620f},  // 13 woodblock
-    {kLogDrum, 0.35f, 1.30f, 0.75f, 1.303f},  // 14 log drum
-    {kTabla, 0.45f, 1.10f, 0.85f, 1.037f},  // 15 tabla
-    {kReed, 0.90f, 0.90f, 0.35f, 1.524f},  // 16 reed
+    {kString, 1.00f, 1.00f, 0.50f, 1.000f, +0.184f, +0.019f},  // 0 string
+    {kMembrane, 1.00f, 1.00f, 0.50f, 1.000f, +0.200f, +0.032f},  // 1 membrane
+    {kBell, 1.00f, 1.00f, 0.50f, 1.000f, +0.187f, +0.020f},  // 2 bell
+    {kKalimba, 1.00f, 1.00f, 0.50f, 1.000f, -0.078f, +0.004f},  // 3 kalimba
+    {kGlass, 1.00f, 1.00f, 0.50f, 1.000f, +0.097f, -0.024f},  // 4 glass
+    {kMarimba, 1.30f, 0.90f, 0.45f, 0.907f, -0.024f, -0.001f},  // 5 marimba
+    {kXylophone, 0.55f, 1.15f, 0.28f, 1.680f, +0.001f, -0.025f},  // 6 xylophone
+    {kVibraphone, 2.40f, 0.55f, 0.55f, 0.791f, +0.207f, -0.009f},  // 7 vibraphone
+    {kPiano, 2.00f, 0.85f, 0.40f, 0.718f, +0.296f, +0.060f},  // 8 piano
+    {kSteelDrum, 1.10f, 0.60f, 0.35f, 1.103f, +0.158f, +0.007f},  // 9 steel drum
+    {kGong, 3.00f, 0.30f, 0.30f, 0.909f, +0.226f, +0.046f},  // 10 gong
+    {kBowl, 3.40f, 0.25f, 0.60f, 0.966f, +0.107f, -0.020f},  // 11 bowl
+    {kTriangle, 2.60f, 0.70f, 0.20f, 1.548f, +0.086f, -0.035f},  // 12 triangle
+    {kWoodblock, 0.22f, 1.60f, 0.60f, 1.620f, +0.084f, -0.025f},  // 13 woodblock
+    {kLogDrum, 0.35f, 1.30f, 0.75f, 1.303f, +0.069f, -0.011f},  // 14 log drum
+    {kTabla, 0.45f, 1.10f, 0.85f, 1.037f, +0.186f, +0.021f},  // 15 tabla
+    {kReed, 0.90f, 0.90f, 0.35f, 1.524f, +0.118f, -0.017f},  // 16 reed
 };
 /*---------------------------------------------------------------------------*
  * One voice: a bank of modes struck once
@@ -376,9 +384,13 @@ void voiceCoefficients(Voice &v, float f0, float note) {
   // Below about middle C the modes sit close enough together to add up in
   // phase, and an octave higher they scatter: measured over the keyboard that
   // is a factor of seven, which no instrument does. This curve takes most of it
-  // out again without flattening the register.
-  const float trim =
-      clipminmaxf(0.25f, pow2f(0.85f * (note - 60.f) * (1.f / 12.f)), 3.5f);
+  // out again without flattening the register, and the per model slope and bend
+  // on top of it take out the rest: a marimba swells around middle C because its
+  // bar modes keep fitting below Nyquist, a piano falls away at the top because
+  // its stretched partials run out first.
+  const float oct = (note - 60.f) * (1.f / 12.f);
+  const float trim = clipminmaxf(
+      0.05f, pow2f((0.85f + spec.reg) * oct + spec.bend * oct * oct), 32.f);
   v.out_gain = ((sum > 1e-9f) ? (kOutSum / sum) : 1.f) * trim * spec.gain;
 }
 
