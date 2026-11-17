@@ -5,7 +5,7 @@
  *
  *   g++ -O2 tools/make_irs.cpp -o /tmp/make_irs && /tmp/make_irs ir
  *
- * The responses come from units/body/src/ir_model.h, the same header the unit
+ * The responses come from units/irbody/src/ir_model.h, the same header the unit
  * renders from on the device, so these files are exactly what it convolves
  * with. Mono, 48 kHz, 16 bit PCM.
  */
@@ -15,7 +15,7 @@
 #include <string>
 #include <vector>
 
-#include "../units/body/src/ir_model.h"
+#include "../units/irbody/src/ir_model.h"
 
 namespace {
 

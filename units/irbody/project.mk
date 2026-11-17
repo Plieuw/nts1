@@ -2,11 +2,11 @@
 # Project Customization
 # #############################################################################
 
-PROJECT = body
+PROJECT = irbody
 
 UCSRC =
 
-UCXXSRC = src/body.cpp
+UCXXSRC = src/irbody.cpp
 
 UINCDIR =
 

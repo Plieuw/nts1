@@ -2,8 +2,9 @@
 
 Six custom units for the **KORG Nu:Tekt NTS-1 (mkI)**, built with the
 [logue SDK](https://github.com/korginc/logue-sdk) v1.1-0. One noise oscillator,
-three modulation effects, and two delay effects — a body/IR convolution and an
-endless barberpole phaser.
+three modulation effects, an endless barberpole phaser in the delay slot and a
+body/IR convolution in the reverb slot — a unit for every user slot the
+instrument has.
 
 | Unit | Slot | What it does | File |
 | --- | --- | --- | --- |
@@ -12,15 +13,30 @@ endless barberpole phaser.
 | `reso` | MOD | Twelve mode resonator with beating pairs, Rings in spirit | `reso.ntkdigunit` |
 | `elements` | MOD | Geometry morphing resonator: string, membrane, plate, bell | `elements.ntkdigunit` |
 | `barber` | DELAY | Barberpole phaser that rises or falls forever | `barber.ntkdigunit` |
-| `irbody` | DELAY | Convolution with modelled instrument bodies and spaces | `irbody.ntkdigunit` |
+| `irbody` | REVERB | Convolution with modelled instrument bodies and spaces | `irbody.ntkdigunit` |
 
 The NTS-1 has one slot per type, so `lpg`, `reso` and `elements` are
-alternatives, as are `barber` and `irbody`. Loading them all is fine; you pick
-per slot.
+alternatives for each other. `barber` and `irbody` are not: they live in
+different slots, so they can run together, and either of them can be combined
+with any of the modulation units.
 
 Note that there is no user slot for an envelope generator on the NTS-1: the MOD
 slot only accepts (audio) modulation effects. `lpg` is the way to get an
 EG-like behaviour out of that slot.
+
+### Where each unit sits
+
+The NTS-1 chain is fixed: oscillator, filter, amp/EG, then the three effect
+slots — modulation, delay, reverb, in that order. Every unit is in the slot
+where that chain does the most for it.
+
+| Slot | Comes after | Unit | Why there |
+| --- | --- | --- | --- |
+| OSC | — | `noise` | the only slot that makes sound |
+| MOD | amp/EG | `lpg` | first slot after the amp envelope, so the follower hears the shape of the note, which is exactly what a vactrol gate wants. The NTS-1 has no user filter or EG slot |
+| MOD | amp/EG | `reso`, `elements` | they turn the oscillator into an instrument, so everything time based should come after them |
+| DELAY | mod | `barber` | a phaser belongs before the reverb, it needs the shift-depth mix that the MOD slot does not have, and its 6.9 KB of code does not fit in the 6 KB MOD budget |
+| REVERB | delay | `irbody` | a space belongs at the end of the chain, and a reverb unit gets the same 12 KB of code, 2.4 MB of SDRAM and shift-depth mix as a delay unit. Leaving the delay slot free means `barber` or an echo can run next to it |
 
 ## The units
 
@@ -127,13 +143,15 @@ the notches into the classic jet sound.
 | B (DEPTH) | feedback / resonance |
 | DEL + B | dry/wet — around the middle gives the deepest notches |
 
-### irbody — delay effect (impulse response / body)
+### irbody — reverb effect (impulse response / body)
 
 Convolves the incoming sound with an impulse response, so the synth sits inside
 a violin body, a piano soundboard, a metal plate or a small space. The responses
 are modelled rather than sampled, but they are true impulse responses and the
 unit convolves with them sample by sample: every partial of the source is
-coloured the way a real body would colour it.
+coloured the way a real body would colour it. It is a reverb effect, so it runs
+last: whatever the modulation units and the delay have made is what it puts in
+the body or the room.
 
 The models are physical: the violin, cello and guitar responses use the air and
 wood resonances of the real instruments (A0, B1-, B1+ and the bridge hill), the
@@ -186,7 +204,7 @@ slot. Custom units need NTS-1 firmware **1.02 or newer**.
 ```
 
 Regenerating the impulse response WAV files (not needed to build, only when you
-change the models in `units/body/src/ir_model.h`):
+change the models in `units/irbody/src/ir_model.h`):
 
 ```sh
 g++ -O2 tools/make_irs.cpp -o /tmp/make_irs && /tmp/make_irs ir
@@ -228,9 +246,11 @@ so your units cannot collide with someone else's.
 * `irbody` is mono in the wet path, so the tail is centred, and its responses
   are capped at 85 ms because that is what fits in the partitioned convolution.
   Longer spaces need the stock reverb after it.
-* The mkI gives a modfx unit 6 KB of SRAM and a delfx unit 12 KB of code space
-  plus 2.4 MB of SDRAM; all units stay well inside those budgets. `irbody` uses
-  about 600 KB of that SDRAM to keep all eight responses precomputed.
+* The mkI gives a modfx unit 6 KB of SRAM and a delay or reverb unit 12 KB of
+  code space plus 2.4 MB of SDRAM; all units stay well inside those budgets.
+  `irbody` uses about 600 KB of that SDRAM to keep all eight responses
+  precomputed, and `barber` is in the delay slot partly because its 6.9 KB of
+  code does not fit the 6 KB a modulation effect gets.
 
 ## License
 

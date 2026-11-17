@@ -1,14 +1,21 @@
 /*
- * body.cpp -- impulse response (body / space) convolution for the
+ * irbody.cpp -- impulse response (body / space) convolution for the
  * KORG Nu:Tekt NTS-1.
  *
  * BSD 3-Clause License, see LICENSE.
  *
- * Runs in the DELAY slot and convolves the incoming sound with a short impulse
+ * Runs in the REVERB slot and convolves the incoming sound with a short impulse
  * response, so the synth sits inside a violin body, a piano soundboard, a metal
- * plate or a small space instead of on its own. The responses are modelled in
- * ir_model.h from resonances, a diffuse tail and early reflections; the same
- * header writes them out as WAV files in ir/ through tools/make_irs.cpp.
+ * plate or a small space instead of on its own. That is where a space belongs:
+ * the reverb slot is the last stage of the NTS-1 chain, so the oscillator, the
+ * modulation units and the delay are all already in the sound that reaches it.
+ * It is also the slot that fits: a reverb unit gets the same 12 KB of code and
+ * 2.4 MB of SDRAM as a delay unit, and the same shift-depth knob for dry/wet.
+ * The delay slot stays free for the barberpole phaser or for an echo.
+ *
+ * The responses are modelled in ir_model.h from resonances, a diffuse tail and
+ * early reflections; the same header writes them out as WAV files in ir/ through
+ * tools/make_irs.cpp.
  *
  * The convolution is partitioned in the frequency domain (16 x 256 taps, FFT
  * size 512), which costs a fraction of what direct convolution of the same
@@ -26,7 +33,7 @@
  * DEL + B knob    dry/wet mix
  */
 
-#include "userdelfx.h"
+#include "userrevfx.h"
 
 #include "ir_model.h"
 
@@ -274,7 +281,7 @@ void clearBuffers() {
  * Unit hooks
  *---------------------------------------------------------------------------*/
 
-void DELFX_INIT(uint32_t platform, uint32_t api) {
+void REVFX_INIT(uint32_t platform, uint32_t api) {
   (void)platform;
   (void)api;
 
@@ -299,7 +306,7 @@ void DELFX_INIT(uint32_t platform, uint32_t api) {
     buildPartitions(p);
 }
 
-void DELFX_PROCESS(float *xn, uint32_t frames) {
+void REVFX_PROCESS(float *xn, uint32_t frames) {
   const int nframes = (int)frames;
 
   for (int i = 0; i < nframes; ++i) {
@@ -327,9 +334,9 @@ void DELFX_PROCESS(float *xn, uint32_t frames) {
   }
 }
 
-void DELFX_PARAM(uint8_t index, int32_t value) {
+void REVFX_PARAM(uint8_t index, int32_t value) {
   switch (index) {
-  case k_user_delfx_param_time: {
+  case k_user_revfx_param_time: {
     const int sel = (int)clipminmaxf(
         0.f, (float)value * (1.f / 1023.f) * (float)kPresetCount,
         (float)(kPresetCount - 1));
@@ -347,12 +354,12 @@ void DELFX_PARAM(uint8_t index, int32_t value) {
     break;
   }
 
-  case k_user_delfx_param_depth:
+  case k_user_revfx_param_depth:
     s.damp = clipminmaxf(0.f, (float)value * (1.f / 1023.f), 1.f);
     updateDamping();
     break;
 
-  case k_user_delfx_param_shift_depth:
+  case k_user_revfx_param_shift_depth:
     s.wet = clipminmaxf(0.f, (float)value * (1.f / 1023.f), 1.f);
     break;
 
@@ -361,11 +368,11 @@ void DELFX_PARAM(uint8_t index, int32_t value) {
   }
 }
 
-void DELFX_SUSPEND(void) {
+void REVFX_SUSPEND(void) {
   clearBuffers();
   s.target = -1;
   s.queued = -1;
   s.fade = 0.f;
 }
 
-void DELFX_RESUME(void) {}
+void REVFX_RESUME(void) {}

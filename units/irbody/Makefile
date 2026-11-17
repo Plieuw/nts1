@@ -1,5 +1,5 @@
 # #############################################################################
-# prologue Delay FX Makefile
+# prologue Reverb FX Makefile
 # #############################################################################
 
 PLATFORMDIR ?= $(abspath ..)
@@ -50,7 +50,7 @@ HEX  := $(CP) -O ihex
 BIN  := $(CP) -O binary
 
 RULESPATH := $(LDDIR)
-LDSCRIPT := $(LDDIR)/userdelfx.ld
+LDSCRIPT := $(LDDIR)/userrevfx.ld
 DLIBS := -lm
 
 DADEFS := -D$(MCU_MODEL) -DCORTEX_USE_FPU=TRUE -DARM_MATH_CM4
