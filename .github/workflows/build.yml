@@ -7,6 +7,15 @@ on:
     types: [published]
 
 jobs:
+  # The units are measured on a PC as well as built for the instrument: a change
+  # in the sound is a failure even when the compiler is happy.
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Measure the units against the goldens
+        run: ./tests/run.sh
+
   units:
     runs-on: ubuntu-22.04
     steps:

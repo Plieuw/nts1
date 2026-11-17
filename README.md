@@ -405,6 +405,24 @@ The unit files are `*.ntkdigunit` packages. Load them with either
 After transferring, the units appear at the end of the selection list of their
 slot. Custom units need NTS-1 firmware **1.02 or newer**.
 
+## Testing
+
+The units are also measured on a PC, against the small stand-in for the SDK in
+`tests/host`. The harness builds each unit, plays it a note or a broadband
+spread of tones, and records what it heard: the level in the attack and in the
+tail, third-octave bands, whether any of the knobs still moves the sound and
+whether random abuse produces anything but a clean signal. Those numbers are
+committed under `tests/golden`, and a change that moves the sound by more than
+1.5 dB in a band, or renames a dead knob, fails the build.
+
+```sh
+tests/run.sh            # compare against the goldens
+tests/run.sh --golden   # rewrite them, when the change is intended
+```
+
+Two things it cannot tell you: what a unit sounds like on the instrument, and
+what it costs there. The host is not a Cortex-M4F.
+
 ## Building
 
 ```sh

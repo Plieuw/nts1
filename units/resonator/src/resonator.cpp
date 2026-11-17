@@ -361,8 +361,14 @@ void voiceCoefficients(Voice &v, float f0, float note) {
     // that depends on how fast the mode decays: that way a short string is not
     // a hundred times louder than a long bell. The 1/(1 + k/2) tilt is what a
     // real strike injects, less energy into the high modes.
-    v.amp[k] = kStrikeGain * (1.f + 0.5f * s.strike) * node /
-               (1.f + spec.tilt * (float)k);
+    // Brightness lives twice: in how long the high modes ring, and in how much
+    // of the strike they get. Without the second half it is a dead knob on the
+    // models that are over before the spread matters — a woodblock, a triangle,
+    // a log drum — which is most of the short ones. It is zero at the setting
+    // the levels were fitted at, so the fit still holds.
+    const float btil = 0.45f * (s.bright - 0.55f);
+    v.amp[k] = kStrikeGain * (1.f + 0.5f * s.strike) * node *
+               pow2f(btil * (float)k) / (1.f + spec.tilt * (float)k);
   }
 
   v.modes = active;

@@ -1,0 +1,52 @@
+#!/usr/bin/env python3
+"""Compare one measure run against its golden, with tolerances that catch a
+change in the sound rather than the last decimal."""
+import sys
+
+BAND_TOL = 1.5      # dB per third-octave band
+LEVEL_TOL = 0.15    # relative, for rms and peak
+KNOB_MOVES = 2.0    # dB a knob that used to move must still move
+
+
+def load(path):
+    m = {}
+    for line in open(path):
+        parts = line.split()
+        m[parts[0]] = [float(x) for x in parts[1:]]
+    return m
+
+
+def main(golden, current):
+    g, c = load(golden), load(current)
+    problems = []
+    for key, gv in g.items():
+        cv = c.get(key)
+        if cv is None:
+            problems.append("%s missing" % key)
+            continue
+        if key.startswith("bands"):
+            worst = max((abs(a - b) for a, b in zip(gv, cv)), default=0)
+            if worst > BAND_TOL:
+                problems.append("spectrum moved %.1f dB (limit %.1f)" % (worst, BAND_TOL))
+        elif key in ("rms", "rms_tail", "rms_late", "peak"):
+            rel = abs(cv[0] - gv[0]) / max(gv[0], 1e-9)
+            if rel > LEVEL_TOL:
+                problems.append("%s %.4f, was %.4f" % (key, cv[0], gv[0]))
+        elif key in ("nan", "fuzznan"):
+            if cv[0] != 0:
+                problems.append("%s %d" % (key, int(cv[0])))
+        elif key == "fuzzpeak":
+            if cv[0] > 0.99:
+                problems.append("fuzz peak %.3f clips" % cv[0])
+        elif key.startswith("knob") and gv[0] > 3.0:
+            if cv[0] < KNOB_MOVES:
+                problems.append("%s only %.1f dB (was %.1f)" % (key, cv[0], gv[0]))
+    if problems:
+        for p in problems:
+            print("   " + p)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1], sys.argv[2]))
