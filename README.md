@@ -40,6 +40,7 @@ space model in the reverb slot — a unit for every user slot the instrument has
 | --- | --- | --- | --- |
 | `noise` | OSC | Eight noise algorithms, from white to tuned resonance | `noise.ntkdigunit` |
 | `resonator` | OSC | 17 model modal resonator, four voices, played from the keyboard | `resonator.ntkdigunit` |
+| `bowed` | OSC | Bowed string, four voices, sustains while the key is down | `bowed.ntkdigunit` |
 | `lpg` | MOD | Vactrol style low pass gate driven by an envelope follower | `lpg.ntkdigunit` |
 | `reso` | MOD | Twelve mode resonator with beating pairs, Rings in spirit | `reso.ntkdigunit` |
 | `elements` | MOD | Geometry morphing resonator: string, membrane, plate, bell | `elements.ntkdigunit` |
@@ -395,6 +396,21 @@ So a full house is one oscillator (`noise` or `resonator`), one of the three
 modulators, and one of `barber` or `irbody` — with the remaining effect slot on a
 stock type.
 
+### What the numbers mean in a frame
+
+One block is 64 frames at 48 kHz: 1.333 ms. The most expensive unit here,
+`barber`, asks for 45 ns of host time per frame, which is 2.9 µs of a 1333 µs
+block, or 0.2%. `bowed` with four voices is 79 ns/frame, `resonator` with four
+is 71. The Cortex-M4F in the NTS-1 runs at 168 MHz and has a single precision
+FPU, so the same code there costs several times what it costs on a desktop core;
+even at eight times the host, the heaviest unit is around 2% of a block.
+
+Which is why nothing here is optimised for speed at the cost of the sound: the
+eight allpass stages of `barber` are what make its sweep a sweep, and cutting
+them would buy idle cycles nothing needs. The one place the budget is real is
+memory in the oscillator slot: `bowed` keeps four delay loops of 1024 samples,
+16 KB of the 32 KB it gets.
+
 ### What each unit promises its slot
 
 The point of the list below is that you can drop any of them next to anything
@@ -439,14 +455,14 @@ those helpers are table lookups.
 
 | Unit | Text + data | SRAM | Cost |
 | --- | --- | --- | --- |
-| `noise` | 5.7 KB | 0.4 KB | 15 ns/frame |
-| `resonator` | 4.9 KB | 1.5 KB | 19 ns/frame (71 with four voices) |
+| `noise` | 5.8 KB | 0.4 KB | 15 ns/frame |
+| `resonator` | 5.1 KB | 1.5 KB | 19 ns/frame (71 with four voices) |
 | `bowed` | 7.0 KB | 16.6 KB | 24 ns/frame (79 with four voices) |
 | `lpg` | 1.6 KB | 0.1 KB | 27 ns/frame |
 | `reso` | 1.5 KB | 0.4 KB | 13 ns/frame |
 | `elements` | 2.1 KB | 0.7 KB | 18 ns/frame |
 | `barber` | 1.8 KB | 0.3 KB | 45 ns/frame |
-| `irbody` | 9.6 KB | 46 KB SDRAM | 28 ns/frame |
+| `irbody` | 7.0 KB | 52 KB SDRAM | 30 ns/frame |
 
 ## Installing on the NTS-1
 
@@ -458,6 +474,10 @@ The unit files are `*.ntkdigunit` packages. Load them with either
 
 After transferring, the units appear at the end of the selection list of their
 slot. Custom units need NTS-1 firmware **1.02 or newer**.
+
+Two guides live in `docs/`: [PATCHES.md](docs/PATCHES.md) says what each model
+is for and where to start, [HARDWARE.md](docs/HARDWARE.md) is the listening
+check list for things the host cannot answer.
 
 ## Testing
 
