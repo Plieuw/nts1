@@ -10,7 +10,8 @@
  * Edit 3   Keytrk       how much the algorithms follow the played note
  * Edit 4   Grain        length of the grains (velvet, crackle, step smoothing)
  * Edit 5   Level        output level
- * Edit 6   Trans        transient: shape band and level (see below)
+ * Edit 6   Trans        transient: one continuous morph from mallet to knock
+ *                       (see below)
  * Edit 7   --           the mkI osc has six edit parameters, so the shape lives
  *                       in the Trans band instead of on its own knob
  *
@@ -18,10 +19,13 @@
  * units, so the oscillator can excite them the way the real object is hit: a
  * soft mallet on a membrane or a plate (mallet), a stick on a wooden bar or a
  * steel plate (stick), a fingertip on a string (pluck), a metal tine or a bell
- * (ping) and a knuckle on a wooden body (knock). Trans is cut into five equal
- * bands, one per shape; the level peaks in the middle of a band and falls to
- * zero at its edges, so you get every shape at every level and sweeping from
- * one to the next never jumps.
+ * (ping) and a knuckle on a wooden body (knock).
+ *
+ * Trans sweeps through them: the five shapes are the five points of one
+ * continuous morph, and everywhere in between the two neighbouring shapes are
+ * mixed, coefficient by coefficient. Nothing is turned off at a boundary, so a
+ * sweep is a sweep and not a walk past four silent gaps, and the knob has a
+ * shape of its own at every position instead of only at five of them.
  *
  * Per-algorithm character (A-knob):
  *   white    nothing to shape, kept as reference noise
@@ -62,10 +66,11 @@ enum TransType {
   kTransCount
 };
 
-// One row per transient shape. fc1 / fc2 are one-pole low passes on the burst
-// (0 = off), dry1 is raw burst mixed in on top, tau1 / tau2 the decay of the
-// fast and the slow envelope, gain normalises the peak so the shapes are
-// interchangeable at the same Trans setting.
+// One row per transient shape, the five points of the morph. fc1 / fc2 are
+// one-pole low passes on the burst (0 = no filter), dry1 is raw burst mixed in
+// on top, tau1 / tau2 the decay of the fast and the slow envelope, ring the
+// share of the tuned resonator that makes the metal end, and gain normalises
+// the peak so the points of the sweep are equally loud.
 struct TransShape {
   float fc1;
   float dry1;
@@ -75,23 +80,40 @@ struct TransShape {
   float wet2;
   float tau2;
   float gain;
+  float ring;
 };
 
 // The gains were measured so that all five land at the same attack level (rms
-// of the first ten milliseconds around 0.45), which makes them interchangeable
-// without a level jump.
+// of the first ten milliseconds around 0.45), which keeps the sweep from
+// changing level while it changes shape.
 const TransShape kTransShape[kTransCount] = {
     // Soft mallet head: no high end, a low thump with a little body to it.
-    {900.f, 0.f, 1.f, 0.014f, 0.f, 0.f, 0.f, 4.3f},
+    {900.f, 0.f, 1.f, 0.014f, 0.f, 0.f, 0.f, 4.3f, 0.f},
     // Hard stick: full band and gone in a few milliseconds.
-    {0.f, 1.f, 0.f, 0.003f, 0.f, 0.f, 0.f, 2.0f},
+    {0.f, 1.f, 0.f, 0.003f, 0.f, 0.f, 0.f, 2.0f, 0.f},
     // Fingertip on a string: a bright edge plus the woody body under it.
-    {5000.f, 0.55f, 0.45f, 0.003f, 620.f, 0.9f, 0.018f, 2.25f},
-    // Metal: the narrow ring is generated separately, this is the click on top.
-    {0.f, 0.25f, 0.75f, 0.030f, 0.f, 0.f, 0.f, 3.5f},
+    {5000.f, 0.55f, 0.45f, 0.003f, 620.f, 0.9f, 0.018f, 2.25f, 0.f},
+    // Metal: the ring is tuned to the note and sits on top of a short click.
+    {0.f, 0.25f, 0.75f, 0.030f, 0.f, 0.f, 0.f, 3.5f, 1.f},
     // Knuckle on a body: only the low end, slow enough to read as a thump.
-    {380.f, 0.f, 1.f, 0.026f, 170.f, 0.6f, 0.040f, 4.3f},
+    {380.f, 0.f, 1.f, 0.026f, 170.f, 0.6f, 0.040f, 4.3f, 0.f},
 };
+
+// The same shapes as per-sample coefficients. They are built once at load time,
+// so turning the knob only interpolates two rows instead of calling expf().
+struct TransCoef {
+  float coef1;
+  float dry1;
+  float wet1;
+  float exp1;
+  float coef2;
+  float wet2;
+  float exp2;
+  float gain;
+  float ring;
+};
+
+TransCoef g_trans_coef[kTransCount];
 
 // Per algorithm output trim, measured so all eight land around -14 dBFS.
 const float kAlgoGain[kAlgoCount] = {0.85f, 3.10f, 1.45f, 1.00f,
@@ -106,8 +128,7 @@ struct State {
   float level;   // 0..1
   float shape;   // A knob, 0..1
   float shift;   // B knob, 0..1
-  float trans;   // 0..1, transient knob: which shape and how loud
-  float trans_level;  // 0..1, derived level of that shape
+  float trans;   // 0..1, transient knob: where in the morph to sit
 
   // Derived from the user parameters.
   float velvet_density;  // impulses per sample
@@ -120,7 +141,7 @@ struct State {
   float velvet_gain;     // compensates the impulse density
   float svf_gain;        // output trim of the tracking band-pass
   float sh_inc;          // sample & hold phase step per sample
-  int   trans_type;      // shape of the note-on transient
+  float trans_ring;      // 0..1, share of the tuned ring in the burst
   float trans_coef;      // decay of the fast transient envelope
   float trans_decay2;    // decay of the slow transient envelope
   float trans_lp_coef;   // one-pole low pass on the burst
@@ -207,7 +228,7 @@ void resetRuntime() {
 
 // The ring of the ping follows the note, so it stays in tune with the synth.
 void updatePing() {
-  if (s.trans_type != kTransPing)
+  if (s.trans_ring <= 0.f)
     return;
 
   const float fs = (float)k_samplerate;
@@ -218,36 +239,70 @@ void updatePing() {
   s.ping_b0 = (1.f - r) * 0.5f;
 }
 
-void updateTransient() {
-  // One knob for both: five equal bands, level peaking in the middle of a band
-  // and zero at its edges. That keeps every shape reachable at any level and
-  // makes the boundary between two shapes silent instead of a jump.
-  int zone = (int)(s.trans * (float)kTransCount);
-  if (zone >= kTransCount)
-    zone = kTransCount - 1;
-  const float frac = s.trans * (float)kTransCount - (float)zone;
-  const float level = 1.f - fabsf(2.f * frac - 1.f);
+void buildTransCoef(const TransShape &t, TransCoef &c) {
+  const float fs = (float)k_samplerate;
+  // A shape without a low pass is a pass-through, not a filter at 0 Hz: that is
+  // what makes the coefficients safe to interpolate.
+  c.coef1 = (t.fc1 > 0.f) ? 1.f - expf(-2.f * kPi * t.fc1 / fs) : 1.f;
+  c.coef2 = (t.fc2 > 0.f) ? 1.f - expf(-2.f * kPi * t.fc2 / fs) : 1.f;
+  c.dry1 = t.dry1;
+  c.wet1 = t.wet1;
+  c.wet2 = t.wet2;
+  c.gain = t.gain;
+  c.ring = t.ring;
+  c.exp1 = expf(-1.f / (t.tau1 * fs));
+  c.exp2 = (t.tau2 > 0.f) ? expf(-1.f / (t.tau2 * fs)) : 0.f;
+}
 
-  if (zone != s.trans_type) {
-    s.trans_type = zone;
-    s.trans_lp = 0.f;
-    s.trans_lp2 = 0.f;
+void buildTransCoefs() {
+  for (int i = 0; i < kTransCount; ++i)
+    buildTransCoef(kTransShape[i], g_trans_coef[i]);
+}
+
+// Between two shapes the burst runs two paths at once (a filtered and a dry one,
+// or a click and a ring), which is up to 4 dB louder in the middle than at the
+// shapes themselves. This is the measured level of the sweep at every quarter
+// step, relative to the shapes: the knob changes the shape and not the volume.
+// The values at the five whole steps are exactly 1, so the five shapes are
+// untouched and only the ground between them is trimmed.
+const float kSweepTrim[17] = {
+    1.000f, 0.644f, 0.617f, 0.706f, 1.000f, 1.029f, 1.038f, 1.078f, 1.000f,
+    0.977f, 0.863f, 0.824f, 1.000f, 0.703f, 0.612f, 0.640f, 1.000f};
+
+void updateTransient() {
+  // Where the knob is in the sweep, and how far between its two neighbours.
+  const float u = s.trans * (float)(kTransCount - 1);
+  int i = (int)u;
+  if (i > kTransCount - 2)
+    i = kTransCount - 2;
+  const float t = u - (float)i;
+
+  const TransCoef &a = g_trans_coef[i];
+  const TransCoef &b = g_trans_coef[i + 1];
+
+  s.trans_lp_coef = linintf(t, a.coef1, b.coef1);
+  s.trans_lp2_coef = linintf(t, a.coef2, b.coef2);
+  s.trans_wet1 = linintf(t, a.wet1, b.wet1);
+  s.trans_dry1 = linintf(t, a.dry1, b.dry1);
+  s.trans_wet2 = linintf(t, a.wet2, b.wet2);
+  s.trans_coef = linintf(t, a.exp1, b.exp1);
+
+  const float q = u * 4.f;  // 0..16, the same scale as the trim table
+  int qi = (int)q;
+  if (qi > 15)
+    qi = 15;
+  const float trim = linintf(q - (float)qi, kSweepTrim[qi], kSweepTrim[qi + 1]);
+  s.trans_gain = linintf(t, a.gain, b.gain) * trim;
+
+  // Once the morph has left the metal end, the ring is frozen: clear it so a
+  // later sweep back into it starts from silence instead of from old state.
+  const float ring = linintf(t, a.ring, b.ring);
+  if (ring <= 0.f && s.trans_ring > 0.f) {
     s.trans_r1 = 0.f;
     s.trans_r2 = 0.f;
   }
-  s.trans_level = level;
-
-  const TransShape &t = kTransShape[s.trans_type];
-  const float fs = (float)k_samplerate;
-
-  s.trans_lp_coef = (t.fc1 > 0.f) ? 1.f - expf(-2.f * kPi * t.fc1 / fs) : 0.f;
-  s.trans_lp2_coef = (t.fc2 > 0.f) ? 1.f - expf(-2.f * kPi * t.fc2 / fs) : 0.f;
-  s.trans_wet1 = t.wet1;
-  s.trans_dry1 = t.dry1;
-  s.trans_wet2 = t.wet2;
-  s.trans_gain = t.gain;
-  s.trans_coef = expf(-1.f / (t.tau1 * fs));
-  s.trans_decay2 = (t.tau2 > 0.f) ? expf(-1.f / (t.tau2 * fs)) : 0.f;
+  s.trans_ring = ring;
+  s.trans_decay2 = linintf(t, a.exp2, b.exp2);
 
   updatePing();
 }
@@ -394,33 +449,37 @@ inline float hybridNoise() {
 // One sample of the note-on transient, shaped after the thing that would hit a
 // string, a bar or a plate. Returns zero when the burst is over.
 inline float transientSample() {
-  // At a band edge the level is zero: stay out of the noise stream entirely, so
-  // "no transient" really is no transient.
-  if (s.trans_env <= 1e-4f || s.trans_level < 1e-4f)
+  if (s.trans_env <= 1e-4f)
     return 0.f;
 
   const float n = osc_white();
-  float v;
+  const float env = s.trans_env;
 
-  if (s.trans_type == kTransPing) {
+  // The colour of the burst. The low pass is what a soft head does to the hit,
+  // the ring is the metal end of the sweep; the morph crossfades the two, so a
+  // shape between pluck and ping is half felt and half tine.
+  s.trans_lp += (n - s.trans_lp) * s.trans_lp_coef;
+  float tone = s.trans_lp;
+
+  if (s.trans_ring > 0.f) {
     const float y =
         s.ping_b0 * n + s.ping_a1 * s.trans_r1 + s.ping_a2 * s.trans_r2;
     s.trans_r2 = s.trans_r1;
     s.trans_r1 = y;
-    v = (s.trans_wet1 * y + s.trans_dry1 * n) * s.trans_env;
-  } else {
-    s.trans_lp += (n - s.trans_lp) * s.trans_lp_coef;
-    v = (s.trans_wet1 * s.trans_lp + s.trans_dry1 * n) * s.trans_env;
+    tone += (y - tone) * s.trans_ring;
+  }
 
-    if (s.trans_lp2_coef > 0.f) {
-      s.trans_lp2 += (n - s.trans_lp2) * s.trans_lp2_coef;
-      v += s.trans_wet2 * s.trans_lp2 * s.trans_env2;
-      s.trans_env2 *= s.trans_decay2;
-    }
+  float v = (s.trans_wet1 * tone + s.trans_dry1 * n) * env;
+
+  // The slow under-layer: the body tone of a pluck, the low thump of a knock.
+  if (s.trans_wet2 > 0.f) {
+    s.trans_lp2 += (n - s.trans_lp2) * s.trans_lp2_coef;
+    v += s.trans_wet2 * s.trans_lp2 * s.trans_env2;
+    s.trans_env2 *= s.trans_decay2;
   }
 
   s.trans_env *= s.trans_coef;
-  return v * s.trans_gain * s.trans_level;
+  return v * s.trans_gain;
 }
 
 /*---------------------------------------------------------------------------*
@@ -523,8 +582,7 @@ void OSC_INIT(uint32_t platform, uint32_t api) {
   s.level = 0.8f;
   s.shape = 0.5f;
   s.shift = 0.5f;
-  s.trans = 0.3f;   // middle of the stick band: a click at half level
-  s.trans_type = kTransStick;
+  s.trans = 0.25f;  // the stick point of the sweep: a click for any material
 
   s.rng = 0x9E3779B9u ^ osc_mcu_hash();
   if (s.rng == 0u)
@@ -533,6 +591,7 @@ void OSC_INIT(uint32_t platform, uint32_t api) {
   s.w0 = 0.f;
   s.freq = 440.f;
 
+  buildTransCoefs();
   updateDerived();
   resetRuntime();
 }

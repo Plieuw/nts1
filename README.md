@@ -37,7 +37,7 @@ Noise is the sound source everything else in this collection likes to chew on.
 | Edit 3 | `Keytrk`: how much the algorithm follows the played note |
 | Edit 4 | `Grain`: grain length for the impulse based algorithms |
 | Edit 5 | `Level` |
-| Edit 6 | `Trans`: which transient, and how loud (five bands, see below) |
+| Edit 6 | `Trans`: transient shape, one continuous sweep from mallet to knock |
 
 What the A-knob does depends on the algorithm: velvet sets the impulse density,
 crackle the event rate, step the sample & hold rate as a multiple of the note,
@@ -45,28 +45,30 @@ tuned the resonance of the tracking band-pass, and hybrid mixes the band-pass
 with a sine at the same pitch. White, pink and brown stay close to their usual
 character — the tilt is on the B-knob.
 
-`Trans` puts a transient on every note-on, and its position chooses which one.
-The knob is cut into five equal bands, one per shape, and the level peaks in the
-middle of a band and falls to zero at its edges: 10 % is a full mallet, 20 % is
-no transient at all, 30 % a full stick, 40 % nothing again, and so on. That way
-every shape is reachable at every level, and going from one to the next never
-jumps. The shapes follow the objects the other units model, so the noise can
+`Trans` puts a transient on every note-on, and the knob sweeps continuously
+through five of them. They are the five points of one morph — 0 % mallet, 25 %
+stick, 50 % pluck, 75 % ping, 100 % knock — and everywhere in between the two
+neighbouring shapes are mixed coefficient by coefficient: a quarter turn between
+mallet and stick is a half-soft head rather than a switch, and no position is
+silent. The shapes follow the objects the other units model, so the noise can
 excite them the way they are actually hit — and a fast amp EG on the NTS-1 makes
 the attack stand out.
 
 | `Trans` | Shape | Sounds like | Pairs with |
 | --- | --- | --- | --- |
-| 0–20 % | mallet | soft head, no high end, 14 ms thump | `elements` membrane/plate, `irbody` piano and guitar |
-| 20–40 % | stick | hard full-band click, gone in 3 ms | marimba, `irbody` wood and steel |
-| 40–60 % | pluck | bright edge over a woody body, 28 ms | `elements` string end, `irbody` violin and cello |
-| 60–80 % | ping | narrow ring tuned to the note, 140 ms | `elements` bell end, `irbody` plate |
-| 80–100 % | knock | knuckle on wood, 5 kHz and down, slow | `irbody` room, or a low thump under anything |
+| 0 % | mallet | soft head, no high end, 14 ms thump | `elements` membrane/plate, `irbody` piano and guitar |
+| 25 % | stick | hard full-band click, gone in 3 ms | marimba, `irbody` wood and steel |
+| 50 % | pluck | bright edge over a woody body, 28 ms | `elements` string end, `irbody` violin and cello |
+| 75 % | ping | narrow ring tuned to the note, 140 ms | `elements` bell end, `irbody` plate |
+| 100 % | knock | knuckle on wood, 5 kHz and down, slow | `irbody` room, or a low thump under anything |
 
-All five were measured to land at the same attack level (within 1 dB), so
-changing shape does not change how loud the attack is: at full level the attack
-peaks 1.7 to 2.5 times the steady level of the noise. Velvet and crackle already
-produce transients at grain level, so keep `Trans` in an empty band when you use
-those for a dry, dusty sound.
+The five shapes were measured to land at the same attack level, and the level
+between them is trimmed against a measured curve, so the sweep stays within about
+1 dB from end to end: the knob changes the shape and not the volume. The attack
+peaks 1.7 to 2.5 times the steady level of the noise. The transient itself cannot
+be dialled away any more — every position of the knob is a shape — so for a dry,
+dusty sound use velvet or crackle, which carry their own transient at grain
+level.
 
 ### lpg — modulation effect (low pass gate)
 
