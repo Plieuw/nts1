@@ -28,6 +28,13 @@ fetch_sdk() {
       https://github.com/korginc/logue-sdk.git "$SDK_DIR"
   fi
 
+  # The platform headers include arm_math.h from the CMSIS submodule, so it has
+  # to be checked out before anything builds.
+  if [ ! -f "$SDK_DIR/platform/ext/CMSIS/CMSIS/Include/arm_math.h" ]; then
+    echo ">> fetching the CMSIS headers"
+    git -C "$SDK_DIR" submodule update --init --depth 1 platform/ext/CMSIS
+  fi
+
   # The NTS-1 (mkI) units are built with gcc 5.4; anything else may produce
   # binaries the firmware refuses to load.
   if [ ! -x "$GCC_PATH/arm-none-eabi-gcc" ]; then
