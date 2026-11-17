@@ -568,8 +568,9 @@ Prefer the SDK's own layout? Copy a `units/<name>` directory into
 `logue-sdk/platform/nutekt-digital/` and run `make install` there; the defaults
 in the Makefile then line up.
 
-`.github/workflows/build.yml` builds all units on every push, uploads them as an
-artifact and attaches them to a GitHub release when you publish one.
+`.github/workflows/build.yml` builds all units on every push and uploads them as
+an artifact, which is what a release is cut from: the eight packages in the beta
+are that artifact, unmodified.
 
 ## Memory budgets
 
