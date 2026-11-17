@@ -550,9 +550,15 @@ The same tool runs `nm` over every unit file and fails if one of them links the
 maths library:
 
 ```
-barber       2120 /  12288 bytes of delfx  memory  ok    libm: none
-irbody       8280 /  12288 bytes of revfx  memory  ok    libm: 6 allowed (ir_model.h)
+barber       1924 /  12288 bytes of delfx  memory  ok    libm: none
+irbody      11684 /  12288 bytes of revfx  memory  ok    libm: 6 allowed (ir_model.h)
 ```
+
+Those are the numbers from the gcc 5.4 that CI builds with; the newer gcc in a
+sandbox builds several units smaller (`irbody` to 8280), so the gate is the
+stricter of the two. It is worth looking at `irbody`'s line: 604 bytes of
+headroom is the smallest in the collection, and its libm is most of what stands
+between it and the wall.
 
 One `cosf` in a loop is not a small thing here. It costs a few hundred cycles per
 sample, it pulls newlib's sine kernels in (4 KB of the oscillator slot's 32 KB,
