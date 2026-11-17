@@ -549,8 +549,8 @@ unit, with the reverb's SDRAM counted separately — and fails if one grew past
 it. `tools/check_budget.py` prints the numbers:
 
 ```
-irbody       9028 /  12288 bytes of revfx memory  ok
-bowed       19488 /  32768 bytes of osc memory  ok
+irbody      11656 /  12288 bytes of revfx memory  ok
+bowed       19524 /  32768 bytes of osc memory  ok
 ```
 
 That check is not ceremony: `irbody` came within 3 KB of its 12 KB while it was
@@ -561,14 +561,14 @@ maths library:
 
 ```
 barber       1924 /  12288 bytes of delfx  memory  ok    libm: none
-irbody      11684 /  12288 bytes of revfx  memory  ok    libm: 6 allowed (ir_model.h)
+irbody      11656 /  12288 bytes of revfx  memory  ok    libm: 6 allowed (ir_model.h)
 ```
 
-Those are the numbers from the gcc 5.4 that CI builds with; the newer gcc in a
-sandbox builds several units smaller (`irbody` to 8280), so the gate is the
-stricter of the two. It is worth looking at `irbody`'s line: 604 bytes of
-headroom is the smallest in the collection, and its libm is most of what stands
-between it and the wall.
+Both snippets are what CI prints, which is the gcc 5.4 the instrument is built
+with; the newer gcc in a sandbox builds several units smaller (`irbody` to 8276),
+so the gate is the stricter of the two. It is worth looking at `irbody`'s line:
+632 bytes of headroom is the smallest in the collection, and its libm is most of
+what stands between it and the wall.
 
 One `cosf` in a loop is not a small thing here. It costs a few hundred cycles per
 sample, it pulls newlib's sine kernels in (4 KB of the oscillator slot's 32 KB,
