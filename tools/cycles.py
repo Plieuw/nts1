@@ -5,7 +5,16 @@ There is no instrument here, so the number has to come out of the binary: this
 reads the disassembly of a range of addresses and applies the Cortex-M4 pipeline
 model to every instruction on it.
 
-    tools/cycles.py <elf> --range 0x2cc-0x2e2 --range 0x2fa-0x390 ...
+    tools/cycles.py <elf> --range 0x20000322-0x2000032c ...
+
+The ranges are read off the disassembly, which is the part that needs a person:
+for bowed the per-sample path is the loop test, the voice setup, the epilogue,
+and per active voice the held/active blocks plus the callee. The numbers in the
+README come from running this over the ELF that CI attaches to its artifact.
+
+Conditional branches are priced as taken, which is the pessimistic side: it is
+right for the loop backs and the fall-through of a rarely taken branch costs a
+cycle less than counted.
 
 The model (Cortex-M4 TRM, instruction timings):
 
@@ -28,11 +37,10 @@ import subprocess
 import sys
 
 LOAD = ("ldr", "str", "ldrb", "strb", "ldrh", "strh", "ldrd", "strd", "vldr",
-        "vstr", "ldmia", "ldmdb", "stmia", "stmdb", "vl dm", "pop", "push")
-CALL = ("bl", "blx", "bx", "pop")   # pop into pc covers the return
+        "vstr", "ldmia", "ldmdb", "stmia", "stmdb", "pop", "push")
 
 
-def cost(mnemonic, is_branch, taken):
+def cost(mnemonic, taken):
     m = mnemonic.lower()
     if m.startswith(("bl", "blx", "bx")):
         return 3
@@ -81,7 +89,7 @@ def main():
                 continue
             n += 1
             taken = mn.lower().startswith("b") or mn.lower() in ("cbz", "cbnz")
-            cycles += cost(mn, taken, taken)
+            cycles += cost(mn, taken)
         counted += n
         total += cycles
         print("  %08x-%08x  %3d instructions  %4d cycles" % (lo, hi, n, cycles))

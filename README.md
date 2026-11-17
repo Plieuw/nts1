@@ -248,11 +248,38 @@ seconds), and after the key comes up it falls to nothing within two seconds.
 **Size:** four delay loops of 1024 samples is 16 KB, which is the largest
 allocation in this collection and still fits the oscillator slot's 32 KB.
 
-It costs 13 ns/frame with one voice and 40 with four. That number used to be 24
-and 79, because the body's two resonators worked their coefficients out per
-sample with `cosf`, twice per voice, and `cosf` also pulled newlib's sine kernels
-into the image. They are calculated once when the model changes now: `nm -u` on
-the unit file lists nothing at all.
+**Cost, on the M4.** Four voices take 777 cycles per frame and one takes 300, so
+a 64 frame block — 1.333 ms — is 276 us of the 180 MHz core, a fifth of it:
+
+```
+                       cycles/frame   per block   of the 1.333 ms block
+one voice                      300      19 232     107 us   8%
+two voices                     459      29 408     163 us  12%
+three voices                   618      39 584     220 us  17%
+four voices                    777      49 760     276 us  21%
+```
+
+Those are counted from the image the instrument gets, not from a PC: the audio
+loop of the gcc 5.4 build is disassembled and priced instruction by instruction
+with the Cortex-M4's timings (1 cycle for the ALU and the single-precision FPU,
+2 for a load or store, 3 for a call and a taken branch), one active voice plus
+three idle ones, including the `bowNoise` call it makes per voice per sample.
+`tools/cycles.py` does the arithmetic and prints the ranges; the model is written
+into its header. Two things it cannot know: the clock (the F446 tops out at
+180 MHz, KORG does not publish the figure, and at 168 MHz the same block is 22%)
+and the pipeline (an M4 can issue a following instruction while a load settles,
+so summing over loads is an upper bound). Neither changes the answer: it fits,
+with four fifths of the block left for the rest of the synth.
+
+The same loop on this host measures 40 ns per frame, a hundred times less, and
+that is not a mistake: a 3.5 GHz out-of-order core with a dual-issue FPU really
+is that far from 180 MHz in order. It is why the table below is a comparison
+between units and this number is a promise about the instrument.
+
+That 777 used to be worse in a way nobody could hear: the body's two resonators
+worked their coefficients out per sample with `cosf`, twice per voice, and `cosf`
+also pulled newlib's sine kernels into the image. They are calculated once when
+the model changes now: `nm -u` on the unit file lists nothing at all.
 
 Note-on costs 1.7 us per voice, and most of that is the noise the note starts
 from. It is worth knowing what that does and does not allow: the unit used to
@@ -462,16 +489,19 @@ without having to think about it:
 
 Measured on the host (x86, gcc 10.3, minimum of five pinned runs, one 64 frame
 block at 48 kHz is 1.333 ms); the numbers are a comparison between the units,
-not an M4 prediction. One caveat: the SDK's lookup helpers are libm calls in the
-host harness, so the units that refresh coefficients while they run (`lpg`,
-`barber`) look relatively more expensive here than they are on the M4, where
-those helpers are table lookups.
+not an M4 prediction — the gap is about two orders of magnitude, see `bowed`
+above. The one row that is not a host figure is `bowed`: it is counted on the M4
+from its own image, so its cost column is in cycles and in block time. One
+caveat on the others: the SDK's lookup helpers are libm calls in the host
+harness, so the units that refresh coefficients while they run (`lpg`, `barber`)
+look relatively more expensive here than they are on the M4, where those helpers
+are table lookups.
 
 | Unit | Text + data | SRAM | Cost |
 | --- | --- | --- | --- |
 | `noise` | 5.8 KB | 0.4 KB | 15 ns/frame |
 | `resonator` | 5.1 KB | 1.5 KB | 19 ns/frame (71 with four voices) |
-| `bowed` | 2.9 KB | 16.6 KB | 13 ns/frame (40 with four voices) |
+| `bowed` | 2.9 KB | 16.6 KB | **777 cycles/frame**, 21% of a block (M4, four voices) |
 | `lpg` | 1.6 KB | 0.1 KB | 27 ns/frame |
 | `reso` | 1.5 KB | 0.4 KB | 13 ns/frame |
 | `elements` | 2.1 KB | 0.7 KB | 18 ns/frame |
@@ -569,6 +599,10 @@ with; the newer gcc in a sandbox builds several units smaller (`irbody` to 8276)
 so the gate is the stricter of the two. It is worth looking at `irbody`'s line:
 632 bytes of headroom is the smallest in the collection, and its libm is most of
 what stands between it and the wall.
+
+`tools/cycles.py` is the other half of that: it prices a range of any unit's
+disassembly with the Cortex-M4's instruction timings, which is where `bowed`'s
+cycles come from. The ELFs are in the CI artifact for exactly that.
 
 One `cosf` in a loop is not a small thing here. It costs a few hundred cycles per
 sample, it pulls newlib's sine kernels in (4 KB of the oscillator slot's 32 KB,
