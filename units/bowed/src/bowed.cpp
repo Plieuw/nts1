@@ -75,6 +75,11 @@ struct State {
   float noise;      // the bow's own noise, one state
   float shape_base, lfo;
   float shape_eff;
+
+  // The body's two resonators, as coefficients. They only depend on the model,
+  // so they are computed when the model changes; the audio loop must not call
+  // cosf, both because it is libm and because it is per sample.
+  float b1_a1, b1_a2, b2_a1, b2_a2;
 };
 
 State s;
@@ -87,6 +92,24 @@ inline float bowNoise() {
   g_rng ^= g_rng >> 17;
   g_rng ^= g_rng << 5;
   return (float)(int32_t)g_rng * (1.f / 2147483648.f);
+}
+
+void updateBody() {
+  const Model &m = kModels[s.model];
+
+  float sn, cs;
+
+  const float r1 = 0.995f - 0.02f * (1.f - m.body_q * 0.2f);
+  const float w1 = 2.f * kPi * clipminmaxf(40.f, m.body_hz, 0.45f * kFs) / kFs;
+  arc_sincos(w1, sn, cs);
+  s.b1_a1 = 2.f * r1 * cs;
+  s.b1_a2 = -r1 * r1;
+
+  const float r2 = 0.993f;
+  const float w2 = clipminmaxf(0.f, 2.f * kPi * m.body_hz * 2.7f / kFs, 2.8f);
+  arc_sincos(w2, sn, cs);
+  s.b2_a1 = 2.f * r2 * cs;
+  s.b2_a2 = -r2 * r2;
 }
 
 void clearVoice(Voice &v) {
@@ -161,6 +184,7 @@ void OSC_INIT(uint32_t platform, uint32_t api) {
   s.shape_base = 0.55f;
   s.shape_eff = 0.55f;
   s.lfo = 0.f;
+  updateBody();
   for (int i = 0; i < kVoices; ++i)
     clearVoice(s.voice[i]);
 }
@@ -230,17 +254,11 @@ void OSC_CYCLE(const user_osc_param_t *const params, int32_t *yn,
       // The body: two resonators in parallel, which is all "the wood" needs to
       // be. A string with no body is a buzz; this is what makes it an object.
       const float in = v.lp * v.env;
-      const float w1 = 2.f * kPi * m.body_hz / kFs;
-      const float r1 = 0.995f - 0.02f * (1.f - m.body_q * 0.2f);
-      const float y1 = 2.f * r1 * cosf(w1) * v.body1_y1 - r1 * r1 * v.body1_y2 +
-                       in * 0.05f;
+      const float y1 = s.b1_a1 * v.body1_y1 + s.b1_a2 * v.body1_y2 + in * 0.05f;
       v.body1_y2 = v.body1_y1;
       v.body1_y1 = y1;
 
-      const float w2 = 2.f * kPi * m.body_hz * 2.7f / kFs;
-      const float r2 = 0.993f;
-      const float y2 = 2.f * r2 * cosf(clipminmaxf(0.f, w2, 2.8f)) * v.body2_y1 -
-                       r2 * r2 * v.body2_y2 + in * 0.03f;
+      const float y2 = s.b2_a1 * v.body2_y1 + s.b2_a2 * v.body2_y2 + in * 0.03f;
       v.body2_y2 = v.body2_y1;
       v.body2_y1 = y2;
 
@@ -288,7 +306,10 @@ void OSC_PARAM(uint16_t index, uint16_t value) {
       model = 0;
     if (model > 4)
       model = 4;
-    s.model = model;
+    if (model != s.model) {
+      s.model = model;
+      updateBody();
+    }
     break;
   }
 

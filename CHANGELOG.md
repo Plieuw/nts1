@@ -3,6 +3,14 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## bowed — 1.1-0
+
+- The body's resonator coefficients are computed when the model changes instead
+  of twice per voice per sample, and with the repo's own polynomial instead of
+  `cosf`. The unit file now has no external symbols at all: 3100 bytes of code
+  instead of 7100, and 13 ns/frame with one voice and 39 with four, where it was
+  24 and 79. Nothing audible moved; the recorded measurements are the same.
+
 ## bowed — 1.0-0
 
 - A new oscillator: a bowed string rather than a struck one. Four voices, five

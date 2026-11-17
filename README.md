@@ -248,7 +248,11 @@ seconds), and after the key comes up it falls to nothing within two seconds.
 **Size:** four delay loops of 1024 samples is 16 KB, which is the largest
 allocation in this collection and still fits the oscillator slot's 32 KB.
 
-It costs 24 ns/frame with one voice and 79 with four.
+It costs 13 ns/frame with one voice and 39 with four. That number used to be 24
+and 79, because the body's two resonators worked their coefficients out per
+sample with `cosf`, twice per voice, and `cosf` also pulled newlib's sine kernels
+into the image. They are calculated once when the model changes now: `nm -u` on
+the unit file lists nothing at all.
 
 ### lpg — modulation effect (low pass gate)
 
@@ -457,7 +461,7 @@ those helpers are table lookups.
 | --- | --- | --- | --- |
 | `noise` | 5.8 KB | 0.4 KB | 15 ns/frame |
 | `resonator` | 5.1 KB | 1.5 KB | 19 ns/frame (71 with four voices) |
-| `bowed` | 7.0 KB | 16.6 KB | 24 ns/frame (79 with four voices) |
+| `bowed` | 3.1 KB | 16.6 KB | 13 ns/frame (39 with four voices) |
 | `lpg` | 1.6 KB | 0.1 KB | 27 ns/frame |
 | `reso` | 1.5 KB | 0.4 KB | 13 ns/frame |
 | `elements` | 2.1 KB | 0.7 KB | 18 ns/frame |
@@ -536,7 +540,7 @@ it. `tools/check_budget.py` prints the numbers:
 
 ```
 irbody       9028 /  12288 bytes of revfx memory  ok
-bowed       23592 /  32768 bytes of osc memory  ok
+bowed       19716 /  32768 bytes of osc memory  ok
 ```
 
 That check is not ceremony: `irbody` came within 3 KB of its 12 KB while it was
