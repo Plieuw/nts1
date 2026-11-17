@@ -1,0 +1,7 @@
+# build output
+build/
+dist/
+*.ntkdigunit
+
+# downloaded logue SDK and toolchain
+.sdk/

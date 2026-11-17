@@ -1,0 +1,20 @@
+{
+    "header" :
+    {
+        "platform" : "nutekt-digital",
+        "module" : "osc",
+        "api" : "1.1-0",
+        "dev_id" : 0,
+        "prg_id" : 1,
+        "version" : "1.0-0",
+        "name" : "noise",
+        "num_param" : 5,
+        "params" : [
+            ["Algo",     0,   7, ""],
+            ["Tune",  -100, 100, "%"],
+            ["Keytrk",   0, 100, "%"],
+            ["Grain",    0, 100, "%"],
+            ["Level",    0, 100, "%"]
+          ]
+    }
+}

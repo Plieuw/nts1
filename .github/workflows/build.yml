@@ -1,0 +1,38 @@
+name: build
+
+on:
+  push:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  units:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # The gcc 5.4 toolchain Korg recommends for the NTS-1 is 32 bit only.
+      - name: Enable 32-bit toolchain support
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libc6:i386 zip
+
+      - name: Build units
+        run: ./scripts/build.sh
+
+      - name: Show what was built
+        run: ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nts1-units
+          path: dist/*.ntkdigunit
+          if-no-files-found: error
+
+      - name: Attach units to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" dist/*.ntkdigunit --clobber
