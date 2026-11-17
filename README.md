@@ -546,6 +546,24 @@ bowed       19716 /  32768 bytes of osc memory  ok
 That check is not ceremony: `irbody` came within 3 KB of its 12 KB while it was
 getting its stereo paths, and what did not fit was libm, not the reverb.
 
+The same tool runs `nm` over every unit file and fails if one of them links the
+maths library:
+
+```
+barber       2120 /  12288 bytes of delfx  memory  ok    libm: none
+irbody       8280 /  12288 bytes of revfx  memory  ok    libm: 6 allowed (ir_model.h)
+```
+
+One `cosf` in a loop is not a small thing here. It costs a few hundred cycles per
+sample, it pulls newlib's sine kernels in (4 KB of the oscillator slot's 32 KB,
+which is what `bowed` was carrying until it stopped calling it per sample), and
+it brings the reentrancy struct along, which is a kilobyte of RAM in a slot that
+has 6 or 12. `irbody` is the single exception and it is listed in the tool with
+the symbols it links today: it builds its coefficients from `ir_model.h`, which
+is written in `sinf`, `cosf`, `expf`, `powf` and `sqrtf` for the sake of the WAV
+generator that shares it. Anything beyond those six names fails, including a new
+call in `irbody` itself.
+
 ## Changing the identity of a unit
 
 `dev_id` and `prg_id` live in each `units/*/manifest.json`. If you intend to
