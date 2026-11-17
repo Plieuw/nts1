@@ -62,8 +62,25 @@ void clearChannel(Channel &c) {
   c.fb = 0.f;
 }
 
+// Small, libm free helpers. One libm call is enough to pull newlib's reentrancy
+// struct (about a kilobyte of RAM) and its errno machinery into the unit, and
+// the sweep only needs a couple of table lookups.
+inline float pow2f(float x) {
+  int i = (int)x;
+  if (x < 0.f && (float)i != x)
+    --i;
+  float r = fx_pow2f(clipminmaxf(0.f, x - (float)i, 2.5f));
+  for (; i > 0; --i)
+    r *= 2.f;
+  for (; i < 0; ++i)
+    r *= 0.5f;
+  return r;
+}
+
+inline float expf_fast(float x) { return pow2f(x * 1.44269504f); }
+
 inline float allpassCoef(float fc) {
-  const float t = tanf(kPi * fc / kFs);
+  const float t = fx_tanpif(clipminmaxf(0.0001f, fc / kFs, 0.45f));
   return (1.f - t) / (1.f + t);
 }
 
@@ -72,22 +89,22 @@ void updateRate() {
   const float off = 2.f * s.time - 1.f;
   s.dir = (off < 0.f) ? -1.f : 1.f;
   const float speed = fabsf(off);
-  s.rate = s.dir * 0.02f * expf(6.21f * speed);  // 0.02 .. 10 Hz
+  s.rate = s.dir * 0.02f * expf_fast(6.21f * speed);  // 0.02 .. 10 Hz
   s.fb_gain = 0.65f * s.depth;
 }
 
 void updateSweep() {
   // Two exponentials a half cycle apart, 60 Hz .. 9.6 kHz.
-  const float fa = 60.f * expf(5.07f * s.phase);
+  const float fa = 60.f * expf_fast(5.07f * s.phase);
   float fb_phase = s.phase + 0.5f;
   if (fb_phase >= 1.f)
     fb_phase -= 1.f;
-  const float fb = 60.f * expf(5.07f * fb_phase);
+  const float fb = 60.f * expf_fast(5.07f * fb_phase);
 
   s.ca = allpassCoef(clipminmaxf(60.f, fa, 0.45f * kFs));
   s.cb = allpassCoef(clipminmaxf(60.f, fb, 0.45f * kFs));
 
-  const float w = 0.5f - 0.5f * cosf(2.f * kPi * s.phase);
+  const float w = 0.5f - 0.5f * fx_cosf(s.phase);
   s.wa = w;
   s.wb = 1.f - w;
 }

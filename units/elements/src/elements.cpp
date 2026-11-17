@@ -45,6 +45,20 @@ inline float pow2f(float x) {
   return r;
 }
 
+// Square root without the maths library: the integer trick seeds it within a
+// few percent and three Newton steps take it to float precision. Only called
+// when the geometry changes, so the divisions do not matter.
+inline float sqrtf_fast(float x) {
+  union { float f; uint32_t i; } u;
+  u.f = x;
+  u.i = (u.i >> 1) + 0x1fbd1df5u;
+  float r = u.f;
+  r = 0.5f * (r + x / r);
+  r = 0.5f * (r + x / r);
+  r = 0.5f * (r + x / r);
+  return r;
+}
+
 inline float expNegSmall(float a) {
   return 1.f - a + a * a * (0.5f - a * 0.16666667f);
 }
@@ -92,7 +106,7 @@ void buildRatioTable() {
     const float n = (float)(k + 1);
     // A real string is stiff: f_n = n * f0 * sqrt(1 + B n^2), which stretches
     // the partials apart as they go up.
-    s.ratio[0][k] = n * sqrtf(1.f + 0.0008f * n * n);
+    s.ratio[0][k] = n * sqrtf_fast(1.f + 0.0008f * n * n);
     s.ratio[1][k] = kMembrane[k];
     s.ratio[2][k] = kPlate[k];
     s.ratio[3][k] = kBell[k];

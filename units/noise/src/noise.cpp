@@ -55,6 +55,42 @@ enum Algo {
 };
 
 constexpr float kPi = 3.14159265358979f;
+// Small, libm free helpers. One libm call is enough to pull newlib's reentrancy
+// struct (about a kilobyte of RAM) and its errno machinery into the unit, and
+// the oscillator has no use for either. The oscillator API has no power of two,
+// so this one splits the exponent off and evaluates the fraction itself.
+inline float pow2f(float x) {
+  int i = (int)x;
+  if (x < 0.f && (float)i != x)
+    --i;
+  const float t = (x - (float)i) * 0.69314718f;   // 2^r = e^(r ln 2), r in [0,1)
+  const float p = 1.f + t * (1.f + t * (0.5f + t * (0.16666667f +
+                  t * (0.04166667f + t * (0.00833333f + t * 0.00138889f)))));
+  union { float f; uint32_t u; } scale;
+  scale.u = (uint32_t)(i + 127) << 23;
+  return p * scale.f;
+}
+
+inline float expf_fast(float x) { return pow2f(x * 1.44269504f); }
+
+// e^-a, with the small exponents an envelope or a one pole needs.
+inline float expNeg(float a) {
+  if (a < 0.25f)
+    return 1.f - a + a * a * (0.5f - a * 0.16666667f);
+  return pow2f(-1.44269504f * a);
+}
+
+inline float sqrtf_fast(float x) {
+  union { float f; uint32_t i; } u;
+  u.f = x;
+  u.i = (u.i >> 1) + 0x1fbd1df5u;
+  float r = u.f;
+  r = 0.5f * (r + x / r);
+  r = 0.5f * (r + x / r);
+  r = 0.5f * (r + x / r);
+  return r;
+}
+
 constexpr float kOutGain = 0.5f;
 
 enum TransType {
@@ -233,8 +269,8 @@ void updatePing() {
 
   const float fs = (float)k_samplerate;
   const float fc = clipminmaxf(280.f, s.freq * 6.5f, 9000.f);
-  const float r = expf(-1.f / (kTransShape[kTransPing].tau1 * fs));
-  s.ping_a1 = 2.f * r * cosf(kPi * fc / fs);
+  const float r = expNeg(1.f / (kTransShape[kTransPing].tau1 * fs));
+  s.ping_a1 = 2.f * r * osc_cosf(0.5f * fc / fs);
   s.ping_a2 = -r * r;
   s.ping_b0 = (1.f - r) * 0.5f;
 }
@@ -243,15 +279,15 @@ void buildTransCoef(const TransShape &t, TransCoef &c) {
   const float fs = (float)k_samplerate;
   // A shape without a low pass is a pass-through, not a filter at 0 Hz: that is
   // what makes the coefficients safe to interpolate.
-  c.coef1 = (t.fc1 > 0.f) ? 1.f - expf(-2.f * kPi * t.fc1 / fs) : 1.f;
-  c.coef2 = (t.fc2 > 0.f) ? 1.f - expf(-2.f * kPi * t.fc2 / fs) : 1.f;
+  c.coef1 = (t.fc1 > 0.f) ? 1.f - expNeg(2.f * kPi * t.fc1 / fs) : 1.f;
+  c.coef2 = (t.fc2 > 0.f) ? 1.f - expNeg(2.f * kPi * t.fc2 / fs) : 1.f;
   c.dry1 = t.dry1;
   c.wet1 = t.wet1;
   c.wet2 = t.wet2;
   c.gain = t.gain;
   c.ring = t.ring;
-  c.exp1 = expf(-1.f / (t.tau1 * fs));
-  c.exp2 = (t.tau2 > 0.f) ? expf(-1.f / (t.tau2 * fs)) : 0.f;
+  c.exp1 = expNeg(1.f / (t.tau1 * fs));
+  c.exp2 = (t.tau2 > 0.f) ? expNeg(1.f / (t.tau2 * fs)) : 0.f;
 }
 
 void buildTransCoefs() {
@@ -311,7 +347,7 @@ void updateTransient() {
 // compensation follows both the density and the smoothing.
 void updateVelvetGain() {
   s.velvet_gain = clipminmaxf(
-      0.5f, 1.15f / sqrtf(s.velvet_density * s.grain_lp * 0.5f), 600.f);
+      0.5f, 1.15f / sqrtf_fast(s.velvet_density * s.grain_lp * 0.5f), 600.f);
 }
 
 // The knobs update only what they change: a repeat of the old single pass over
@@ -319,16 +355,16 @@ void updateVelvetGain() {
 // that had not moved.
 void updateShape() {
   // Impulse / event densities, per sample.
-  s.velvet_density = clipminmaxf(0.f, 0.0005f * expf(6.00f * s.shape), 0.25f);
-  s.crackle_rate = clipminmaxf(0.f, 0.00002f * expf(8.50f * s.shape), 0.2f);
+  s.velvet_density = clipminmaxf(0.f, 0.0005f * expf_fast(6.00f * s.shape), 0.25f);
+  s.crackle_rate = clipminmaxf(0.f, 0.00002f * expf_fast(8.50f * s.shape), 0.2f);
 
   // Sample & hold rate, 1x .. 64x the note frequency.
-  s.sh_ratio = expf(4.16f * s.shape);
+  s.sh_ratio = expf_fast(4.16f * s.shape);
 
   // Tracking band-pass: Q from 1.5 up to 60, and the output trim that goes with
   // it. Both are block constants, so they are not recomputed per sample.
-  s.svf_k = 1.f / (1.5f * expf(3.70f * s.shape));
-  s.svf_gain = clipminmaxf(0.8f, 0.35f * sqrtf(1.f / s.svf_k), 6.f);
+  s.svf_k = 1.f / (1.5f * expf_fast(3.70f * s.shape));
+  s.svf_gain = clipminmaxf(0.8f, 0.35f * sqrtf_fast(1.f / s.svf_k), 6.f);
 
   s.hybrid_mix = s.shape;
 
@@ -337,12 +373,12 @@ void updateShape() {
 
 void updateGrain() {
   // 0.5 ms .. 75 ms smoothing of impulses and sample & hold steps.
-  const float smooth_tau = 0.0005f * expf(5.01f * s.grain);
-  s.grain_lp = 1.f - expf(-1.f / (smooth_tau * (float)k_samplerate));
+  const float smooth_tau = 0.0005f * expf_fast(5.01f * s.grain);
+  s.grain_lp = 1.f - expNeg(1.f / (smooth_tau * (float)k_samplerate));
 
   // 2 ms .. 400 ms decay of a crackle grain.
-  const float decay_tau = 0.002f * expf(5.30f * s.grain);
-  s.grain_coef = expf(-1.f / (decay_tau * (float)k_samplerate));
+  const float decay_tau = 0.002f * expf_fast(5.30f * s.grain);
+  s.grain_coef = expNeg(1.f / (decay_tau * (float)k_samplerate));
 
   updateVelvetGain();
 }
@@ -369,7 +405,7 @@ void updatePitch(const user_osc_param_t *params) {
   updatePing();
 
   const float fc = clipminmaxf(20.f, s.freq, 18000.f);
-  const float g = tanf(kPi * fc / (float)k_samplerate);
+  const float g = osc_tanpif(clipminmaxf(0.0001f, fc / (float)k_samplerate, 0.45f));
   const float a1 = 1.f / (1.f + g * (g + s.svf_k));
   s.svf_a1 = a1;
   s.svf_a2 = g * a1;

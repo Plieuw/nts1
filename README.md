@@ -36,7 +36,7 @@ where that chain does the most for it.
 | OSC | — | `noise` | the only slot that makes sound |
 | MOD | amp/EG | `lpg` | first slot after the amp envelope, so the follower hears the shape of the note, which is exactly what a vactrol gate wants. The NTS-1 has no user filter or EG slot |
 | MOD | amp/EG | `reso`, `elements` | they turn the oscillator into an instrument, so everything time based should come after them |
-| DELAY | mod | `barber` | a phaser belongs before the reverb, it needs the shift-depth mix that the MOD slot does not have, and its 6.9 KB of code does not fit in the 6 KB MOD budget |
+| DELAY | mod | `barber` | a phaser belongs before the reverb, and it needs the dry/wet knob that only a delay or reverb unit gets; a modulation effect has no shift-depth parameter |
 | REVERB | delay | `irbody` | a space belongs at the end of the chain, and a reverb unit gets the same 12 KB of code, 2.4 MB of SDRAM and shift-depth mix as a delay unit |
 
 ## The units
@@ -234,6 +234,11 @@ without having to think about it:
   the bank is dropped instead of passing a NaN down the chain.
 * **Bounded output.** All six end in a soft clip, so a slot cannot hand the next
   one more than full scale.
+* **No maths library.** A single call into libm is enough for the linker to pull
+  newlib's reentrancy struct into the image: about a kilobyte of RAM and a few
+  kilobytes of code, out of the 6 or 12 KB a slot gets. Every unit does its own
+  exponentials, square roots and sines with the SDK's tables or a short
+  polynomial instead.
 * **Tails end.** Ten seconds after the last note every tail has fallen below
   -70 dB (the longest are `reso` at its 5 s ring time and `elements` at its
   bell end, which is a very quiet but very long sustain by design).
@@ -247,11 +252,11 @@ those helpers are table lookups.
 
 | Unit | Text + data | SRAM | Cost |
 | --- | --- | --- | --- |
-| `noise` | 11.7 KB | 0.4 KB | 15 ns/frame |
+| `noise` | 5.7 KB | 0.4 KB | 15 ns/frame |
 | `lpg` | 1.6 KB | 0.1 KB | 27 ns/frame |
 | `reso` | 1.5 KB | 0.4 KB | 13 ns/frame |
-| `elements` | 3.1 KB | 0.7 KB | 18 ns/frame |
-| `barber` | 7.9 KB | 0.3 KB | 44 ns/frame |
+| `elements` | 2.1 KB | 0.7 KB | 18 ns/frame |
+| `barber` | 1.8 KB | 0.3 KB | 45 ns/frame |
 | `irbody` | 10.7 KB | 603 KB SDRAM | 52 ns/frame |
 
 ## Installing on the NTS-1
@@ -317,10 +322,12 @@ so your units cannot collide with someone else's.
   are capped at 85 ms because that is what fits in the partitioned convolution.
   Longer spaces need the stock reverb after it.
 * The mkI gives a modfx unit 6 KB of SRAM and a delay or reverb unit 12 KB of
-  code space plus 2.4 MB of SDRAM; all units stay well inside those budgets.
-  `irbody` uses about 600 KB of that SDRAM to keep all eight responses
-  precomputed, and `barber` is in the delay slot partly because its 6.9 KB of
-  code does not fit the 6 KB a modulation effect gets.
+  code space plus 2.4 MB of SDRAM; all units stay well inside those budgets now
+  that none of them links the maths library. `irbody` uses about 600 KB of that
+  SDRAM to keep all eight responses precomputed, and is the one unit that still
+  carries libm (about 1 KB of RAM and 2 KB of code), because its responses are
+  modelled with `sinf`, `cosf` and `expf` in a header that the WAV generator
+  shares — those files are meant to be bit for bit what the unit plays.
 
 ## License
 
