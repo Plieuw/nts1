@@ -5,36 +5,33 @@
  *
  * The modulation slot has `elements`, which is the same idea with the pitch set
  * by hand, because a modulation effect gets two knobs and no note. This is the
- * same engine in the oscillator slot, where the note number is available: 23
+ * same engine in the oscillator slot, where the note number is available: 17
  * models, four voices, played from the keyboard.
  *
  * The models are the objects the other units imitate. A model is a ratio set
  * plus the way that object behaves under the knobs: how long it rings, how fast
- * its high modes go, and how much of the strike lands up there.
+ * its high modes go, and how much of the strike lands up there. Seventeen, not
+ * twenty-three: every model that measured too close to another one is gone, so
+ * that switching the model knob always changes the object and not just its
+ * brightness.
  *
  *   0  string     harmonic series with the inharmonic stretch a stiff string has
- *   1  membrane   Bessel ratios of a circular membrane
- *   2  plate      two dimensional bending modes of a flat plate
- *   3  bell       strongly inharmonic partials, the high ones carry the character
- *   4  multi      the first modes of the four above, superimposed into one bank
- *   5  chime      tubular bell: near harmonics that break up in the upper ones
- *   6  kalimba    free-free tine, almost all of its energy in the first modes
- *   7  glass      circular plate with a free edge: handpan, glass harp, gong
- *   8  pipe       open air column: harmonic, a struck wood or bamboo tube
- *   9  marimba    tuned bar, 1:3.9:9.2 with the n^2 tail of a free-free bar
- *  10  xylophone  undercut bar, 1:3:6, brittle and short
- *  11  vibraphone bar with an octave of detuned pairs: the shimmer of the bars
- *  12  piano      stiff string with its unisons detuned, hammered not plucked
- *  13  handpan    near harmonic with the octave and the fifth standing out
- *  14  steel drum octave led pan: a low note with the octave blooming over it
- *  15  gong       dense inharmonic cluster, beating, the highs barely die
- *  16  bowl       singing bowl: a few widely spaced modes that ring for ever
- *  17  triangle   metal with almost nothing but high partials, very long
- *  18  woodblock  two or three modes and a knock, gone in a fifth of a second
- *  19  log drum   slit drum: strong fundamental, hollow 1:2.75 ratio, short
- *  20  tabla      head loaded so it is tuned, near harmonic, with a snap
- *  21  trumpet    brass: every harmonic present, strident highs
- *  22  reed       odd harmonics of a closed pipe with a reed: hollow, nasal
+ *   1  membrane   Bessel ratios of a circular membrane: drum heads
+ *   2  bell       strongly inharmonic partials, the high ones carry the character
+ *   3  kalimba    free-free tine, almost all of its energy in the first modes
+ *   4  glass      circular plate with a free edge: glass harp, cymbal
+ *   5  marimba    tuned bar, 1:3.9:9.2 with the n^2 tail of a free-free bar
+ *   6  xylophone  undercut bar, 1:3:6, brittle and short
+ *   7  vibraphone bar with an octave of detuned pairs: the shimmer of the bars
+ *   8  piano      stiff string with its unisons detuned, hammered not plucked
+ *   9  steel drum octave led pan: a low note with the octave blooming over it
+ *  10  gong       dense inharmonic cluster, beating, the highs barely die
+ *  11  bowl       singing bowl: a few widely spaced modes that ring for ever
+ *  12  triangle   metal with almost nothing but high partials, very long
+ *  13  woodblock  two or three modes and a knock, gone in a fifth of a second
+ *  14  log drum   slit drum: strong fundamental, hollow 1:2.75 ratio, short
+ *  15  tabla      head loaded so it is tuned, near harmonic, with a snap
+ *  16  reed       odd harmonics of a closed pipe with a reed: hollow, nasal
  *
  * A note is struck: a burst of filtered noise goes into the bank, the mode
  * levels depend on where the strike lands (a real bar has nodes that a strike
@@ -63,7 +60,7 @@
 namespace {
 
 constexpr int kModes = 16;
-constexpr int kModels = 23;
+constexpr int kModels = 17;
 constexpr int kVoices = 4;
 constexpr float kFs = 48000.f;
 
@@ -97,27 +94,22 @@ inline float expNegSmall(float a) {
   return 1.f - a + a * a * (0.5f - a * 0.16666667f);
 }
 
+// The ratio sets. A model is a set of modes plus the way that object behaves
+// under the knobs; together they are the palette of the unit. Each one is an
+// instrument a bank of modes can actually tell apart: measured against each
+// other, every model here is at least four standard deviations of its spectral
+// envelope away from its closest neighbour (see the README), which is why there
+// is no second harmonic tube next to the string and no second bell.
+
 // Circular membrane: ratios of the Bessel zeros, 1.000 being the fundamental.
 static const float kMembrane[kModes] = {
     1.000f, 1.593f, 2.135f, 2.295f, 2.653f, 2.917f, 3.155f, 3.500f,
     3.598f, 3.647f, 4.059f, 4.230f, 4.831f, 5.132f, 5.428f, 5.467f};
 
-// Flat plate: two dimensional bending modes, dense and fairly even.
-static const float kPlate[kModes] = {
-    1.000f, 1.580f, 2.000f, 2.280f, 2.650f, 3.160f, 3.500f, 4.000f,
-    4.470f, 5.000f, 5.480f, 6.000f, 6.480f, 7.000f, 7.500f, 8.000f};
-
-// (String table lives further down, next to the specs, because a stiff string
-// builds its ratios in code rather than listing them.)
 // Bell: strongly inharmonic, the high partials carry a lot of the character.
 static const float kBell[kModes] = {
     1.000f, 2.000f, 2.400f, 3.000f, 3.900f, 4.600f, 5.400f, 6.800f,
     7.900f, 9.200f, 10.60f, 12.10f, 13.70f, 15.40f, 17.20f, 19.10f};
-
-// Tubular bell: the first partials sit close to harmonics, the rest break away.
-static const float kChime[kModes] = {
-    1.000f, 2.000f, 2.400f, 3.000f, 4.000f, 4.500f, 5.330f, 6.000f,
-    6.670f, 8.000f, 9.330f, 10.67f, 12.00f, 13.33f, 14.67f, 16.00f};
 
 // Kalimba: a free-free tine. Nearly everything is in the first partial and the
 // series runs away fast, which is what makes it read as a tine and not a string.
@@ -129,12 +121,6 @@ static const float kKalimba[kModes] = {
 static const float kGlass[kModes] = {
     1.000f, 2.320f, 4.250f, 6.630f, 9.380f, 12.50f, 15.90f, 19.60f,
     23.60f, 27.90f, 32.40f, 37.20f, 42.20f, 47.40f, 52.90f, 58.60f};
-
-// Open air column: a harmonic series with every partial present, the way a tube
-// open at both ends behaves. Struck, it is a wood block or a bamboo tube.
-static const float kPipe[kModes] = {
-    1.000f, 2.000f, 3.000f, 4.000f, 5.000f, 6.000f, 7.000f, 8.000f,
-    9.000f, 10.00f, 11.00f, 12.00f, 13.00f, 14.00f, 15.00f, 16.00f};
 
 // Marimba: a bar tuned so its first three modes land on 1, 4 and 9-ish, with the
 // free-free bar series running up from there. Softer and lower than a xylophone.
@@ -161,12 +147,6 @@ static const float kVibraphone[kModes] = {
 static const float kPiano[kModes] = {
     1.0000f, 1.0015f, 2.0008f, 2.0038f, 3.0027f, 3.0072f, 4.0064f, 4.0125f,
     5.0125f, 5.0200f, 6.0216f, 6.0307f, 7.0343f, 7.0449f, 8.0512f, 8.0634f};
-
-// Handpan: dimpled steel tuned to the octave and the fifth, so it is close to
-// harmonic, with a second voice a few cents off on the octave for the shimmer.
-static const float kHandpan[kModes] = {
-    1.000f, 2.000f, 2.004f, 3.000f, 4.030f, 5.000f, 6.020f, 7.000f,
-    8.050f, 9.000f, 10.00f, 11.00f, 12.10f, 13.00f, 14.00f, 15.00f};
 
 // Steel drum: a pan is tuned in octaves, the second partial is as strong as the
 // first and everything above it doubles again, which is the bloom it has.
@@ -212,20 +192,14 @@ static const float kTabla[kModes] = {
     1.000f, 2.000f, 3.000f, 4.020f, 5.000f, 6.000f, 7.000f, 8.020f,
     9.000f, 10.00f, 11.00f, 12.00f, 13.00f, 14.00f, 15.00f, 16.00f};
 
-// Trumpet: a conical brass bore, so every harmonic is there and the upper ones
-// are loud. Blown, but as a struck body it is a bright brass bar.
-static const float kTrumpet[kModes] = {
-    1.000f, 2.000f, 3.000f, 4.000f, 5.000f, 6.000f, 7.000f, 8.000f,
-    9.000f, 10.00f, 11.00f, 12.00f, 13.00f, 14.00f, 15.00f, 16.00f};
-
 // Reed: a stopped pipe with a reed, odd harmonics only, the fifth strong. The
 // hollowness is the gap where every even harmonic should have been.
 static const float kReed[kModes] = {
     1.000f, 3.000f, 5.000f, 7.000f, 9.000f, 11.00f, 13.00f, 15.00f,
     17.00f, 19.00f, 21.00f, 23.00f, 25.00f, 27.00f, 29.00f, 31.00f};
 
-// The four basic ratio sets, kept next to the models that use them.
-// A real string is stiff: f_n = n * f0 * sqrt(1 + B n^2), which stretches the
+// String: a real string is stiff, f_n = n * f0 * sqrt(1 + B n^2), which
+// stretches the partials apart as they go up. f_n = n * f0 * sqrt(1 + B n^2), which stretches the
 // partials apart as they go up. B = 0.0008, written out.
 static const float kString[kModes] = {
     1.000f, 2.003f, 3.011f, 4.026f, 5.050f, 6.086f, 7.136f, 8.202f,
@@ -233,7 +207,9 @@ static const float kString[kModes] = {
 
 // How a model behaves under the knobs, on top of the shared envelope: decay
 // scales the A knob's time, spread scales how much faster the high modes die
-// than the low ones, and tilt says how much of the strike reaches the top.
+// than the low ones, and tilt says how much of the strike reaches the top. The
+// gain is the level fit: every model was measured against the same loudness and
+// trimmed to it, so changing model does not change how loud you are.
 struct ModelSpec {
   const float *ratio;
   float decay;
@@ -242,40 +218,26 @@ struct ModelSpec {
   float gain;
 };
 
-// Ordered like the model list at the top of the file. The first nine are the
-// models the unit started with, so their behaviour is the reference: decay and
-// spread at 1, the same tilt everywhere. The ones added after them say what the
-// object is: a woodblock is gone in a fifth of a second and has nothing but
-// click, a bowl is still ringing when you play the next note and keeps its
-// highs, a xylophone puts almost everything into the upper modes.
+// Ordered like the model list at the top of the file.
 static const ModelSpec kSpec[kModels] = {
-    {kString, 1.00f, 1.00f, 0.50f, 1.f},      // 0  string
-    {kMembrane, 1.00f, 1.00f, 0.50f, 1.f},    // 1  membrane
-    {kPlate, 1.00f, 1.00f, 0.50f, 1.f},       // 2  plate
-    {kBell, 1.00f, 1.00f, 0.50f, 1.f},        // 3  bell
-    {kPipe, 1.00f, 1.00f, 0.50f, 1.f},        // 4  multi (merged at init)
-    {kChime, 1.00f, 1.00f, 0.50f, 1.f},       // 5  chime
-    {kKalimba, 1.00f, 1.00f, 0.50f, 1.f},     // 6  kalimba
-    {kGlass, 1.00f, 1.00f, 0.50f, 1.f},       // 7  glass
-    {kPipe, 1.00f, 1.00f, 0.50f, 1.f},        // 8  pipe
-    {kMarimba, 1.30f, 0.90f, 0.45f, 0.907f},  // 9  marimba
-    {kXylophone, 0.55f, 1.15f, 0.28f, 1.680f},  // 10 xylophone
-    {kVibraphone, 2.40f, 0.55f, 0.55f, 0.791f},  // 11 vibraphone
-    {kPiano, 2.00f, 0.85f, 0.40f, 0.718f},  // 12 piano
-    {kHandpan, 2.20f, 0.45f, 0.50f, 0.862f},  // 13 handpan
-    {kSteelDrum, 1.10f, 0.60f, 0.35f, 1.103f},  // 14 steel drum
-    {kGong, 3.00f, 0.30f, 0.30f, 0.909f},  // 15 gong
-    {kBowl, 3.40f, 0.25f, 0.60f, 0.966f},  // 16 bowl
-    {kTriangle, 2.60f, 0.70f, 0.20f, 1.548f},  // 17 triangle
-    {kWoodblock, 0.22f, 1.60f, 0.60f, 1.620f},  // 18 woodblock
-    {kLogDrum, 0.35f, 1.30f, 0.75f, 1.303f},  // 19 log drum
-    {kTabla, 0.45f, 1.10f, 0.85f, 1.037f},  // 20 tabla
-    {kTrumpet, 1.00f, 0.90f, 0.22f, 1.319f},  // 21 trumpet
-    {kReed, 0.90f, 0.90f, 0.35f, 1.524f},  // 22 reed
+    {kString, 1.00f, 1.00f, 0.50f, 1.000f},  // 0  string
+    {kMembrane, 1.00f, 1.00f, 0.50f, 1.000f},  // 1  membrane
+    {kBell, 1.00f, 1.00f, 0.50f, 1.000f},  // 2  bell
+    {kKalimba, 1.00f, 1.00f, 0.50f, 1.000f},  // 3  kalimba
+    {kGlass, 1.00f, 1.00f, 0.50f, 1.000f},  // 4  glass
+    {kMarimba, 1.30f, 0.90f, 0.45f, 0.907f},  // 5  marimba
+    {kXylophone, 0.55f, 1.15f, 0.28f, 1.680f},  // 6  xylophone
+    {kVibraphone, 2.40f, 0.55f, 0.55f, 0.791f},  // 7  vibraphone
+    {kPiano, 2.00f, 0.85f, 0.40f, 0.718f},  // 8  piano
+    {kSteelDrum, 1.10f, 0.60f, 0.35f, 1.103f},  // 9  steel drum
+    {kGong, 3.00f, 0.30f, 0.30f, 0.909f},  // 10 gong
+    {kBowl, 3.40f, 0.25f, 0.60f, 0.966f},  // 11 bowl
+    {kTriangle, 2.60f, 0.70f, 0.20f, 1.548f},  // 12 triangle
+    {kWoodblock, 0.22f, 1.60f, 0.60f, 1.620f},  // 13 woodblock
+    {kLogDrum, 0.35f, 1.30f, 0.75f, 1.303f},  // 14 log drum
+    {kTabla, 0.45f, 1.10f, 0.85f, 1.037f},  // 15 tabla
+    {kReed, 0.90f, 0.90f, 0.35f, 1.524f},  // 16 reed
 };
-
-constexpr int kMultiModel = 4;
-
 /*---------------------------------------------------------------------------*
  * One voice: a bank of modes struck once
  *---------------------------------------------------------------------------*/
@@ -313,7 +275,6 @@ struct State {
   float level;    // 0..1
   float tune;     // semitones
 
-  float multi[kModes];
   Voice voice[kVoices];
   uint32_t age;
   uint32_t rng;
@@ -348,36 +309,11 @@ bool voiceQuiet(const Voice &v) {
   return mag < 1e-9f;
 }
 
-void buildMulti() {
-  // The multi model takes the first modes of the four basics and sorts them: one
-  // shared fundamental and everything else filling in between, which is what
-  // makes it read as one dense metal rather than as four instruments at once.
-  // Sorted, because the render loop stops at the first mode above Nyquist.
-  float merged[kModes];
-  merged[0] = 1.f;   // one shared fundamental, not four stacked on top of it
-  int c = 1;
-  for (int m = 0; m < 4 && c < kModes; ++m)
-    for (int j = 1; j < kModes && c < kModes; ++j)
-      merged[c++] = kSpec[m].ratio[j];
-
-  for (int i = 1; i < kModes; ++i) {
-    const float v = merged[i];
-    int j = i - 1;
-    for (; j >= 0 && merged[j] > v; --j)
-      merged[j + 1] = merged[j];
-    merged[j + 1] = v;
-  }
-
-  for (int k = 0; k < kModes; ++k)
-    s.multi[k] = merged[k];
-}
-
 // Everything that depends on the pitch, for one voice. Called at a strike and
 // whenever a knob that shapes the bank moves.
 void voiceCoefficients(Voice &v, float f0, float note) {
   const ModelSpec &spec = kSpec[s.model];
-  const float *const ratio =
-      (s.model == kMultiModel) ? s.multi : spec.ratio;
+  const float *const ratio = spec.ratio;
   const float tau = 0.1f * pow2f(6.9f * s.decay) * spec.decay;   // 0.1 s .. 12 s
   const float spread =
       (0.32f - 0.28f * s.bright + 0.30f * s.damp) * spec.spread;
@@ -611,8 +547,6 @@ void OSC_INIT(uint32_t platform, uint32_t api) {
   s.rng = 0x9E3779B9u ^ osc_mcu_hash();
   if (s.rng == 0u)
     s.rng = 0x1234567u;
-
-  buildMulti();
 
   for (int i = 0; i < kVoices; ++i) {
     Voice &v = s.voice[i];

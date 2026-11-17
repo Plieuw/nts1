@@ -1,4 +1,35 @@
-# NTS-1 units
+| Model | Object | Character |
+| --- | --- | --- |
+| 0 | string | harmonic series with the inharmonic stretch of a stiff string |
+| 1 | membrane | Bessel ratios of a circular membrane: drum heads |
+| 2 | bell | strongly inharmonic partials, the high ones carry the character |
+| 3 | kalimba | free-free tine, almost all of its energy in the first partials |
+| 4 | glass | circular plate with a free edge: glass harp, cymbal |
+| 5 | marimba | tuned bar (1 : 3.9 : 9.2), warm, rings a second or two |
+| 6 | xylophone | undercut bar (1 : 3 : 6), brittle, all attack |
+| 7 | vibraphone | bar with every partial doubled a few cents apart: slow tremolo |
+| 8 | piano | stiff string with detuned unisons, hammered, long |
+| 9 | steel drum | octave led pan: the octave blooms over the note |
+| 10 | gong | dense inharmonic metal, beating, highs outlive the lows |
+| 11 | bowl | singing bowl: a few widely spaced modes, seconds long |
+| 12 | triangle | bent rod: almost nothing but high partials, very long |
+| 13 | woodblock | hollow block: two modes and a knock, a fifth of a second |
+| 14 | log drum | slit drum, hollow 1 : 2.75, short with a big fundamental |
+| 15 | tabla | loaded head, tuned almost harmonic, short and snappy |
+| 16 | reed | stopped pipe with a reed: odd harmonics only, hollow |
+
+Seventeen, not the twenty-three it grew to: the models were compared against each
+other, one sixth of an octave at a time, and the ones that were a different name
+for the same bank of modes are gone. Trumpet was the harmonic series of `pipe`
+with a brighter tilt; `pipe` itself was `string` for the first fifteen partials;
+`plate` sat 3.1 standard deviations from `membrane` with nearly the same dense
+two dimensional set; `chime` was `bell` with a harmonic start; `handpan` was
+`string` below 6 kHz with a shimmer on top; and `multi`, which was meant to merge
+the four basics, merged `string` with itself — it only ever took that model's own
+modes. Everything left is at least 4.4 standard deviations of its spectral
+envelope away from its closest neighbour (4.3 at the closest, median 9.4), so a
+move of the model knob changes the object and not just its brightness. The numbering moved with it: this is the
+first version where model 5 is not the same instrument it used to be.# NTS-1 units
 
 Seven custom units for the **KORG Nu:Tekt NTS-1 (mkI)**, built with the
 [logue SDK](https://github.com/korginc/logue-sdk) v1.1-0. Two oscillators, three
@@ -8,7 +39,7 @@ space model in the reverb slot — a unit for every user slot the instrument has
 | Unit | Slot | What it does | File |
 | --- | --- | --- | --- |
 | `noise` | OSC | Eight noise algorithms, from white to tuned resonance | `noise.ntkdigunit` |
-| `resonator` | OSC | 23 model modal resonator, four voices, played from the keyboard | `resonator.ntkdigunit` |
+| `resonator` | OSC | 17 model modal resonator, four voices, played from the keyboard | `resonator.ntkdigunit` |
 | `lpg` | MOD | Vactrol style low pass gate driven by an envelope follower | `lpg.ntkdigunit` |
 | `reso` | MOD | Twelve mode resonator with beating pairs, Rings in spirit | `reso.ntkdigunit` |
 | `elements` | MOD | Geometry morphing resonator: string, membrane, plate, bell | `elements.ntkdigunit` |
@@ -126,7 +157,7 @@ long you hear it ring.
 | --- | --- |
 | A (SHAPE) | decay, 0.1 s .. 12 s |
 | B (SHIFT) | brightness: how long the high modes live, and how open the strike is |
-| Edit 1 | `Model`: 0 string, 1 membrane, 2 plate, 3 bell, 4 multi, 5 chime, 6 kalimba, 7 glass, 8 pipe, 9 marimba, 10 xylophone, 11 vibraphone, 12 piano, 13 handpan, 14 steel drum, 15 gong, 16 bowl, 17 triangle, 18 woodblock, 19 log drum, 20 tabla, 21 trumpet, 22 reed (the menu counts from 1) |
+| Edit 1 | `Model`: 0 string, 1 membrane, 2 bell, 3 kalimba, 4 glass, 5 marimba, 6 xylophone, 7 vibraphone, 8 piano, 9 steel drum, 10 gong, 11 bowl, 12 triangle, 13 woodblock, 14 log drum, 15 tabla, 16 reed (the menu counts from 1) |
 | Edit 2 | `Strike`: soft mallet .. hard hammer |
 | Edit 3 | `Pos`: where the strike lands across the object |
 | Edit 4 | `Tune`: ± 24 semitones |
@@ -139,15 +170,15 @@ its high modes die than its low ones, and how much of the strike reaches the top
 That is what separates the two bars tuned to 1 : 4 : 10 — a xylophone is gone in
 a fraction of a second with nothing but attack, a vibraphone is still ringing
 when the next note comes — and it is how the wood block, the log drum and the
-tabla sit next to the plate and the bell instead of sounding like shorter
+tabla sit next to the glass and the bell instead of sounding like shorter
 versions of them. The models keep the knobs: `Damp` darkens any of them, `Strike`
 and `Pos` move the attack, `Tune` moves the note.
 
 The strike goes straight into the modes instead of through a coupling factor, so
 a short string is not a hundred times louder than a long bell: the decay knob
-changes the length of the note, not its level. The nine models the unit started
-with set the reference level; every model added since is fitted to the same
-measured loudness, so switching models does not jump in volume. `Pos` puts a node under the modes
+changes the length of the note, not its level. The first models the unit had set
+the reference level; every model is fitted to the same measured loudness, so
+switching models does not jump in volume. `Pos` puts a node under the modes
 a real bar would miss, which is the difference between striking a bar in the
 middle and at the end. The attack is normalised over the sum of the modes and
 over the keyboard — the measured 7:1 spread between the bottom and the top of the
@@ -336,7 +367,7 @@ those helpers are table lookups.
 | Unit | Text + data | SRAM | Cost |
 | --- | --- | --- | --- |
 | `noise` | 5.7 KB | 0.4 KB | 15 ns/frame |
-| `resonator` | 5.3 KB | 1.5 KB | 15 ns/frame (72 with four voices) |
+| `resonator` | 4.7 KB | 1.5 KB | 20 ns/frame (69 with four voices) |
 | `lpg` | 1.6 KB | 0.1 KB | 27 ns/frame |
 | `reso` | 1.5 KB | 0.4 KB | 13 ns/frame |
 | `elements` | 2.1 KB | 0.7 KB | 18 ns/frame |
