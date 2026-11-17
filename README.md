@@ -37,7 +37,7 @@ Noise is the sound source everything else in this collection likes to chew on.
 | Edit 3 | `Keytrk`: how much the algorithm follows the played note |
 | Edit 4 | `Grain`: grain length for the impulse based algorithms |
 | Edit 5 | `Level` |
-| Edit 6 | `Trans`: noise transient on every note-on |
+| Edit 6 | `Trans`: which transient, and how loud (five bands, see below) |
 
 What the A-knob does depends on the algorithm: velvet sets the impulse density,
 crackle the event rate, step the sample & hold rate as a multiple of the note,
@@ -45,11 +45,28 @@ tuned the resonance of the tracking band-pass, and hybrid mixes the band-pass
 with a sine at the same pitch. White, pink and brown stay close to their usual
 character — the tilt is on the B-knob.
 
-`Trans` adds a short noise transient to every note-on: full band noise that is
-shaped by the same tilt, decaying in about ten milliseconds. It gives the noise
-a percussive, struck attack instead of a fade-in, and it is most obvious with a
-fast amp EG on the NTS-1. Velvet and crackle already produce transients at grain
-level, so turn `Trans` down when you use those for a dry, dusty sound.
+`Trans` puts a transient on every note-on, and its position chooses which one.
+The knob is cut into five equal bands, one per shape, and the level peaks in the
+middle of a band and falls to zero at its edges: 10 % is a full mallet, 20 % is
+no transient at all, 30 % a full stick, 40 % nothing again, and so on. That way
+every shape is reachable at every level, and going from one to the next never
+jumps. The shapes follow the objects the other units model, so the noise can
+excite them the way they are actually hit — and a fast amp EG on the NTS-1 makes
+the attack stand out.
+
+| `Trans` | Shape | Sounds like | Pairs with |
+| --- | --- | --- | --- |
+| 0–20 % | mallet | soft head, no high end, 14 ms thump | `elements` membrane/plate, `irbody` piano and guitar |
+| 20–40 % | stick | hard full-band click, gone in 3 ms | marimba, `irbody` wood and steel |
+| 40–60 % | pluck | bright edge over a woody body, 28 ms | `elements` string end, `irbody` violin and cello |
+| 60–80 % | ping | narrow ring tuned to the note, 140 ms | `elements` bell end, `irbody` plate |
+| 80–100 % | knock | knuckle on wood, 5 kHz and down, slow | `irbody` room, or a low thump under anything |
+
+All five were measured to land at the same attack level (within 0.3 dB), so
+changing shape does not change how loud the attack is: at full level the attack
+peaks 1.7 to 2.3 times the steady level of the noise. Velvet and crackle already
+produce transients at grain level, so keep `Trans` in an empty band when you use
+those for a dry, dusty sound.
 
 ### lpg — modulation effect (low pass gate)
 

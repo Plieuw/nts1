@@ -10,7 +10,18 @@
  * Edit 3   Keytrk       how much the algorithms follow the played note
  * Edit 4   Grain        length of the grains (velvet, crackle, step smoothing)
  * Edit 5   Level        output level
- * Edit 6   Trans        noise transient on every note-on, for a percussive attack
+ * Edit 6   Trans        transient: shape band and level (see below)
+ * Edit 7   --           the mkI osc has six edit parameters, so the shape lives
+ *                       in the Trans band instead of on its own knob
+ *
+ * The transient shapes are matched to the bodies and resonators of the other
+ * units, so the oscillator can excite them the way the real object is hit: a
+ * soft mallet on a membrane or a plate (mallet), a stick on a wooden bar or a
+ * steel plate (stick), a fingertip on a string (pluck), a metal tine or a bell
+ * (ping) and a knuckle on a wooden body (knock). Trans is cut into five equal
+ * bands, one per shape; the level peaks in the middle of a band and falls to
+ * zero at its edges, so you get every shape at every level and sweeping from
+ * one to the next never jumps.
  *
  * Per-algorithm character (A-knob):
  *   white    nothing to shape, kept as reference noise
@@ -42,6 +53,46 @@ enum Algo {
 constexpr float kPi = 3.14159265358979f;
 constexpr float kOutGain = 0.5f;
 
+enum TransType {
+  kTransMallet = 0,
+  kTransStick,
+  kTransPluck,
+  kTransPing,
+  kTransKnock,
+  kTransCount
+};
+
+// One row per transient shape. fc1 / fc2 are one-pole low passes on the burst
+// (0 = off), dry1 is raw burst mixed in on top, tau1 / tau2 the decay of the
+// fast and the slow envelope, gain normalises the peak so the shapes are
+// interchangeable at the same Trans setting.
+struct TransShape {
+  float fc1;
+  float dry1;
+  float wet1;
+  float tau1;
+  float fc2;
+  float wet2;
+  float tau2;
+  float gain;
+};
+
+// The gains were measured so that all five land at the same attack level (rms
+// of the first ten milliseconds around 0.45), which makes them interchangeable
+// without a level jump.
+const TransShape kTransShape[kTransCount] = {
+    // Soft mallet head: no high end, a low thump with a little body to it.
+    {900.f, 0.f, 1.f, 0.014f, 0.f, 0.f, 0.f, 4.3f},
+    // Hard stick: full band and gone in a few milliseconds.
+    {0.f, 1.f, 0.f, 0.003f, 0.f, 0.f, 0.f, 2.0f},
+    // Fingertip on a string: a bright edge plus the woody body under it.
+    {5000.f, 0.55f, 0.45f, 0.003f, 620.f, 0.9f, 0.018f, 2.25f},
+    // Metal: the narrow ring is generated separately, this is the click on top.
+    {0.f, 0.25f, 0.75f, 0.030f, 0.f, 0.f, 0.f, 3.5f},
+    // Knuckle on a body: only the low end, slow enough to read as a thump.
+    {380.f, 0.f, 1.f, 0.026f, 170.f, 0.6f, 0.040f, 4.3f},
+};
+
 // Per algorithm output trim, measured so all eight land around -14 dBFS.
 const float kAlgoGain[kAlgoCount] = {0.85f, 3.10f, 1.45f, 1.00f,
                                      1.65f, 4.10f, 2.00f, 1.30f};
@@ -55,7 +106,8 @@ struct State {
   float level;   // 0..1
   float shape;   // A knob, 0..1
   float shift;   // B knob, 0..1
-  float trans;   // 0..1, note-on transient amount
+  float trans;   // 0..1, transient knob: which shape and how loud
+  float trans_level;  // 0..1, derived level of that shape
 
   // Derived from the user parameters.
   float velvet_density;  // impulses per sample
@@ -66,7 +118,18 @@ struct State {
   float sh_ratio;        // sample & hold rate, as a multiple of the note
   float hybrid_mix;      // band-pass <-> sine
   float velvet_gain;     // compensates the impulse density
-  float trans_coef;      // decay of the note-on transient
+  int   trans_type;      // shape of the note-on transient
+  float trans_coef;      // decay of the fast transient envelope
+  float trans_decay2;    // decay of the slow transient envelope
+  float trans_lp_coef;   // one-pole low pass on the burst
+  float trans_lp2_coef;  // second, darker one for the tail of the attack
+  float trans_wet1;
+  float trans_dry1;
+  float trans_wet2;
+  float trans_gain;
+  float ping_a1;         // resonant ring for kTransPing
+  float ping_a2;
+  float ping_b0;
 
   // Runtime state.
   uint32_t rng;
@@ -85,7 +148,12 @@ struct State {
   float dc_x;
   float dc_y;
   float phi;
-  float trans_env;  // note-on transient envelope
+  float trans_env;   // fast note-on transient envelope
+  float trans_env2;  // slow note-on transient envelope
+  float trans_lp;
+  float trans_lp2;
+  float trans_r1;
+  float trans_r2;
   float w0;      // phase increment per sample of the played note
   float freq;    // in Hz
 };
@@ -128,6 +196,58 @@ void resetRuntime() {
   s.dc_y = 0.f;
   s.phi = rand01();
   s.trans_env = 0.f;
+  s.trans_env2 = 0.f;
+  s.trans_lp = 0.f;
+  s.trans_lp2 = 0.f;
+  s.trans_r1 = 0.f;
+  s.trans_r2 = 0.f;
+}
+
+// The ring of the ping follows the note, so it stays in tune with the synth.
+void updatePing() {
+  if (s.trans_type != kTransPing)
+    return;
+
+  const float fs = (float)k_samplerate;
+  const float fc = clipminmaxf(280.f, s.freq * 6.5f, 9000.f);
+  const float r = expf(-1.f / (kTransShape[kTransPing].tau1 * fs));
+  s.ping_a1 = 2.f * r * cosf(kPi * fc / fs);
+  s.ping_a2 = -r * r;
+  s.ping_b0 = (1.f - r) * 0.5f;
+}
+
+void updateTransient() {
+  // One knob for both: five equal bands, level peaking in the middle of a band
+  // and zero at its edges. That keeps every shape reachable at any level and
+  // makes the boundary between two shapes silent instead of a jump.
+  int zone = (int)(s.trans * (float)kTransCount);
+  if (zone >= kTransCount)
+    zone = kTransCount - 1;
+  const float frac = s.trans * (float)kTransCount - (float)zone;
+  const float level = 1.f - fabsf(2.f * frac - 1.f);
+
+  if (zone != s.trans_type) {
+    s.trans_type = zone;
+    s.trans_lp = 0.f;
+    s.trans_lp2 = 0.f;
+    s.trans_r1 = 0.f;
+    s.trans_r2 = 0.f;
+  }
+  s.trans_level = level;
+
+  const TransShape &t = kTransShape[s.trans_type];
+  const float fs = (float)k_samplerate;
+
+  s.trans_lp_coef = (t.fc1 > 0.f) ? 1.f - expf(-2.f * kPi * t.fc1 / fs) : 0.f;
+  s.trans_lp2_coef = (t.fc2 > 0.f) ? 1.f - expf(-2.f * kPi * t.fc2 / fs) : 0.f;
+  s.trans_wet1 = t.wet1;
+  s.trans_dry1 = t.dry1;
+  s.trans_wet2 = t.wet2;
+  s.trans_gain = t.gain;
+  s.trans_coef = expf(-1.f / (t.tau1 * fs));
+  s.trans_decay2 = (t.tau2 > 0.f) ? expf(-1.f / (t.tau2 * fs)) : 0.f;
+
+  updatePing();
 }
 
 void updateDerived() {
@@ -156,9 +276,7 @@ void updateDerived() {
   s.velvet_gain = clipminmaxf(
       0.5f, 1.15f / sqrtf(s.velvet_density * s.grain_lp * 0.5f), 600.f);
 
-  // A struck source: full band, gone within ten milliseconds or so. A little
-  // longer than a click, short enough to read as an attack and not as a tone.
-  s.trans_coef = expf(-1.f / (0.011f * (float)k_samplerate));
+  updateTransient();
 }
 
 // Pitch and band-pass coefficients are refreshed once per buffer.
@@ -172,6 +290,8 @@ void updatePitch(const user_osc_param_t *params) {
 
   s.w0 = osc_w0f_for_note(ni, nf);
   s.freq = s.w0 * (float)k_samplerate;
+
+  updatePing();
 
   const float fc = clipminmaxf(20.f, s.freq, 18000.f);
   const float g = tanf(kPi * fc / (float)k_samplerate);
@@ -251,6 +371,38 @@ inline float hybridNoise() {
   return (1.f - m) * tunedNoise() + m * osc_sinf(s.phi);
 }
 
+// One sample of the note-on transient, shaped after the thing that would hit a
+// string, a bar or a plate. Returns zero when the burst is over.
+inline float transientSample() {
+  // At a band edge the level is zero: stay out of the noise stream entirely, so
+  // "no transient" really is no transient.
+  if (s.trans_env <= 1e-4f || s.trans_level <= 0.f)
+    return 0.f;
+
+  const float n = osc_white();
+  float v;
+
+  if (s.trans_type == kTransPing) {
+    const float y =
+        s.ping_b0 * n + s.ping_a1 * s.trans_r1 + s.ping_a2 * s.trans_r2;
+    s.trans_r2 = s.trans_r1;
+    s.trans_r1 = y;
+    v = (s.trans_wet1 * y + s.trans_dry1 * n) * s.trans_env;
+  } else {
+    s.trans_lp += (n - s.trans_lp) * s.trans_lp_coef;
+    v = (s.trans_wet1 * s.trans_lp + s.trans_dry1 * n) * s.trans_env;
+
+    if (s.trans_lp2_coef > 0.f) {
+      s.trans_lp2 += (n - s.trans_lp2) * s.trans_lp2_coef;
+      v += s.trans_wet2 * s.trans_lp2 * s.trans_env2;
+      s.trans_env2 *= s.trans_decay2;
+    }
+  }
+
+  s.trans_env *= s.trans_coef;
+  return v * s.trans_gain * s.trans_level;
+}
+
 }  // namespace
 
 /*---------------------------------------------------------------------------*
@@ -268,7 +420,8 @@ void OSC_INIT(uint32_t platform, uint32_t api) {
   s.level = 0.8f;
   s.shape = 0.5f;
   s.shift = 0.5f;
-  s.trans = 0.35f;
+  s.trans = 0.3f;   // middle of the stick band: a click at half level
+  s.trans_type = kTransStick;
 
   s.rng = 0x9E3779B9u ^ osc_mcu_hash();
   if (s.rng == 0u)
@@ -324,12 +477,8 @@ void OSC_CYCLE(const user_osc_param_t *const params, int32_t *yn,
 
     x *= kAlgoGain[s.algo];
 
-    // Note-on transient: a short burst of the same broadband noise, so it is
-    // shaped by the tilt and the rest of the unit just like the main signal.
-    if (s.trans_env > 1e-4f) {
-      x += s.trans_env * s.trans * 2.2f * osc_white();
-      s.trans_env *= s.trans_coef;
-    }
+    // The transient goes in before the tilt, so the osc keeps its own colour.
+    x += transientSample();
 
     // Spectral tilt: crossfade between the low and the high part of the signal.
     s.tilt_lp += (x - s.tilt_lp) * tilt_coef;
@@ -350,6 +499,7 @@ void OSC_NOTEON(const user_osc_param_t *const params) {
   (void)params;
   resetRuntime();
   s.trans_env = 1.f;
+  s.trans_env2 = 1.f;
 }
 
 void OSC_NOTEOFF(const user_osc_param_t *const params) {
