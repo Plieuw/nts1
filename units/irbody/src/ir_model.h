@@ -6,7 +6,8 @@
  * The responses are built from the things a real body or space does: a handful
  * of resonances at physically plausible frequencies, each with its own damping,
  * a diffuse tail whose high frequencies die away faster than its low ones, a
- * short broadband impact for the knock, and early reflections for the spaces.
+ * short broadband impact for the knock. They are all bodies: soundboxes, tubes
+ * and shells, the things a synthesiser would be played through.
  *
  * The unit builds its filters from these numbers (a resonator per mode, a
  * feedback delay network with the decay and brightness of the tail), and
@@ -93,6 +94,22 @@ static const Mode kSteel[] = {
     {12.9f, 0.34f, 0.70f},  {16.1f, 0.26f, 0.62f},
 };
 
+// --- clarinet body: a closed-open tube, so the odd harmonics of its air column,
+// with the damping a wooden bore puts on the higher ones.
+static const Mode kClarinet[] = {
+    {1.000f, 1.00f, 1.00f}, {3.000f, 0.55f, 0.80f}, {5.000f, 0.40f, 0.62f},
+    {7.000f, 0.30f, 0.50f}, {9.000f, 0.22f, 0.40f}, {11.00f, 0.16f, 0.32f},
+    {13.00f, 0.12f, 0.26f}, {15.00f, 0.09f, 0.21f}, {17.00f, 0.07f, 0.17f},
+};
+
+// --- drum shell: the few modes of a cylindrical shell, low, with a lot of knock
+// and a short breath of noise around the rim.
+static const Mode kDrum[] = {
+    {1.000f, 1.00f, 1.00f}, {1.510f, 0.80f, 0.85f}, {1.980f, 0.60f, 0.70f},
+    {2.440f, 0.45f, 0.58f}, {2.980f, 0.32f, 0.46f}, {3.600f, 0.22f, 0.36f},
+    {4.300f, 0.15f, 0.28f},
+};
+
 static const Preset kPresets[kPresetCount] = {
     // name      modes    count  f0     tau     noise  n_tau   bright impact
     {"violin", kViolin, 11, 280.f, 0.020f, 0.12f, 0.008f, 0.60f, 0.35f},
@@ -101,8 +118,8 @@ static const Preset kPresets[kPresetCount] = {
     {"guitar", kGuitar, 9, 100.f, 0.022f, 0.15f, 0.010f, 0.50f, 0.30f},
     {"wood", kWood, 6, 320.f, 0.010f, 0.20f, 0.004f, 0.62f, 0.45f},
     {"steel", kSteel, 8, 430.f, 0.035f, 0.25f, 0.020f, 0.75f, 0.35f},
-    {"room", nullptr, 0, 0.f, 0.f, 1.00f, 0.030f, 0.42f, 0.10f},
-    {"plate", nullptr, 0, 0.f, 0.f, 1.00f, 0.045f, 0.72f, 0.15f},
+    {"clarinet", kClarinet, 9, 131.f, 0.022f, 0.15f, 0.010f, 0.45f, 0.30f},
+    {"drum", kDrum, 7, 90.f, 0.028f, 0.35f, 0.013f, 0.55f, 0.60f},
 };
 
 static uint32_t s_rng;

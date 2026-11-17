@@ -19,8 +19,8 @@
  * same one with the finite response taken out of it.
  *
  *   resonances      one two pole resonator per mode, driven by the input
- *   diffuse tail    four damped comb filters, feedback from the tail's decay
- *   size            the comb delays: short for a body, longer for a space
+ *   diffuse tail    four delay lines in a feedback delay network
+ *   size            the delays of that network
  *   damping         the same one pole low pass on the wet signal as before
  *
  * The sustain is the one difference worth knowing about. An 85 ms response stops
@@ -29,8 +29,8 @@
  * frames. That is what a body does, and it is the one place where this is not
  * only cheaper but better.
  *
- * A-knob (TIME)   which object: violin, cello, piano, guitar, wood, steel,
- *                 room, plate
+ * A-knob (TIME)   which body: violin, cello, piano, guitar, wood, steel,
+ *                 clarinet, drum
  * B-knob (DEPTH)  damping of the wet signal, dark .. open
  * DEL + B knob    dry/wet mix
  *
@@ -53,8 +53,6 @@ constexpr int kCombs = 4;
 constexpr int kCombMax = 1400;  // 29 ms at 48 kHz, the longest comb
 constexpr int kAp0Len = 240;    // 5.0 ms allpass
 constexpr int kAp1Len = 96;     // 2.0 ms allpass
-constexpr int kErMax = 800;     // 16.7 ms of early reflections
-constexpr int kErTaps = 10;
 constexpr int kPresetCount = irmodel::kPresetCount;
 constexpr int kFadeSamples = 4096;  // 85 ms crossfade on a switch
 
@@ -71,7 +69,6 @@ constexpr float kTailScale = 1.f;
 float g_comb[2][kCombs][kCombMax] __sdram;
 float g_ap0[2][kAp0Len] __sdram;
 float g_ap1[2][kAp1Len] __sdram;
-float g_er[2][kErMax] __sdram;
 
 /*---------------------------------------------------------------------------*
  * One engine: the resonances of an object plus its tail
@@ -108,15 +105,6 @@ struct Engine {
   float tail_lp_in;
   float tail_out_cut;
   float tail_out_lp;
-  float er_out;
-
-  // Early reflections: the discrete bounces that give a space its size, and the
-  // only part of a room the model had that a diffuse network cannot invent.
-  int er_taps;
-  int er_len;
-  int er_pos;
-  float er_gain[kErTaps];
-  int er_tap[kErTaps];
 };
 
 Engine g_eng[2];
@@ -146,12 +134,8 @@ void clearEngine(Engine &e) {
   }
   e.tail_lp_in = 0.f;
   e.tail_out_lp = 0.f;
-  e.er_out = 0.f;
   e.ap0_pos = 0;
   e.ap1_pos = 0;
-  e.er_taps = 0;
-  e.er_len = kErMax;
-  e.er_pos = 0;
 }
 
 void clearBuffers(int slot) {
@@ -162,15 +146,12 @@ void clearBuffers(int slot) {
     g_ap0[slot][i] = 0.f;
   for (int i = 0; i < kAp1Len; ++i)
     g_ap1[slot][i] = 0.f;
-  for (int i = 0; i < kErMax; ++i)
-    g_er[slot][i] = 0.f;
 }
 
 // The comb delays carry the size of the object: a violin body answers inside a
 // few milliseconds, a room has to be a few metres across before it sounds like
 // one. They are coprime-ish on purpose, so the four do not line up into a pitch.
 const float kBodyDelays[kCombs] = {0.0057f, 0.0083f, 0.0119f, 0.0157f};
-const float kSpaceDelays[kCombs] = {0.0091f, 0.0133f, 0.0179f, 0.0233f};
 
 // How loud the resonances and the tail sit in each object, fitted band by band
 // to the responses the old version convolved with. The bank is the modes; the
@@ -188,8 +169,8 @@ const Trim kTrim[kPresetCount] = {
     {0.863f, 5.025f},  // guitar
     {1.773f, 3.870f},  // wood
     {0.389f, 5.055f},  // steel
-    {0.000f, 10.439f},  // room
-    {0.000f, 8.897f},  // plate
+    {1.131f, 5.749f},  // clarinet
+    {0.501f, 1.707f},  // drum
 };
 
 // Builds one engine for a preset. Only ever called from the parameter callback
@@ -238,8 +219,7 @@ void buildEngine(int slot, int preset) {
   // Diffuse tail. The feedback is what the response's decay calls for over the
   // line's own length: a delay line of D samples with feedback g dies with a
   // time constant of -D / ln(g), so g = exp(-D / tau) gives the model's tau.
-  const bool space = (p.mode_count == 0);
-  const float *delays = space ? kSpaceDelays : kBodyDelays;
+  const float *delays = kBodyDelays;
   const float tau = (p.noise_tau > 0.0005f) ? p.noise_tau : 0.0005f;
   for (int c = 0; c < kCombs; ++c) {
     int len = (int)(delays[c] * kFs);
@@ -262,32 +242,8 @@ void buildEngine(int slot, int preset) {
   // are what let the tail darken as it goes instead of sounding like noise.
   e.tail_cut = 1.f - expf(-2.f * kPi * 450.f / kFs);
   e.tail_hi = 0.2f + 0.6f * p.bright;
-  // A space is heard from the room, a body from the inside: the same brightness
-  // leaves a space with more air on top than the diffuse field of a body.
-  const float tail_lp = space ? (2000.f + 6000.f * p.bright)
-                              : (900.f + 2600.f * p.bright);
+  const float tail_lp = 900.f + 2600.f * p.bright;
   e.tail_out_cut = 1.f - expf(-2.f * kPi * tail_lp / kFs);
-
-  // Early reflections for the spaces. A body answers from its first sample and
-  // does not need them; a room is quiet until the first wall, which is exactly
-  // the part a diffuse tail alone cannot give.
-  if (space) {
-    uint32_t rng = 0x9E3779B9u + 7919u * (uint32_t)preset;
-    int taps = 0;
-    for (int r = 0; r < kErTaps; ++r) {
-      rng = rng * 1664525u + 1013904223u;
-      const float u = (float)(rng >> 8) * (1.f / 16777216.f);
-      const int d = (int)((0.002f + 0.013f * u) * kFs);
-      if (d >= kErMax)
-        continue;
-      rng = rng * 1664525u + 1013904223u;
-      const float g = (float)(rng >> 8) * (2.f / 16777216.f) - 1.f;
-      e.er_tap[taps] = d;
-      e.er_gain[taps] = g * 0.4f * expf(-0.25f * (float)r);
-      ++taps;
-    }
-    e.er_taps = taps;
-  }
 
   e.ap_g = 0.6f;
   e.bank_scale = kBankScale;
@@ -309,22 +265,6 @@ inline float engineSample(int slot, Engine &e, float x) {
   bank *= e.bank_scale;
 
   // Tail: four damped combs in parallel, then two allpasses to smear them.
-  // Early reflections come off a short delay line tapping the same input.
-  if (e.er_taps > 0) {
-    float *const er = g_er[slot];
-    er[e.er_pos] = x;
-    float er_sum = 0.f;
-    for (int t = 0; t < e.er_taps; ++t) {
-      int idx = e.er_pos - e.er_tap[t];
-      if (idx < 0)
-        idx += kErMax;
-      er_sum += er[idx] * e.er_gain[t];
-    }
-    if (++e.er_pos >= kErMax)
-      e.er_pos = 0;
-    e.er_out = er_sum;
-  }
-
   e.tail_lp_in += (x - e.tail_lp_in) * e.tail_cut;
   const float drive = e.tail_lp_in + (x - e.tail_lp_in) * e.tail_hi;
 
@@ -374,7 +314,7 @@ inline float engineSample(int slot, Engine &e, float x) {
   // make the tail darken as it goes instead of sounding like filtered noise.
   e.tail_out_lp += (tail - e.tail_out_lp) * e.tail_out_cut;
 
-  return bank + (e.tail_out_lp + e.er_out) * e.tail_gain;
+  return bank + e.tail_out_lp * e.tail_gain;
 }
 
 void updateDamping() {

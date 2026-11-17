@@ -13,7 +13,7 @@ space model in the reverb slot — a unit for every user slot the instrument has
 | `reso` | MOD | Twelve mode resonator with beating pairs, Rings in spirit | `reso.ntkdigunit` |
 | `elements` | MOD | Geometry morphing resonator: string, membrane, plate, bell | `elements.ntkdigunit` |
 | `barber` | DELAY | Barberpole phaser that rises or falls forever | `barber.ntkdigunit` |
-| `irbody` | REVERB | Modelled instrument bodies and spaces, played as filters | `irbody.ntkdigunit` |
+| `irbody` | REVERB | Instrument bodies — soundbox, tube, shell — played as filters | `irbody.ntkdigunit` |
 
 The NTS-1 has one slot per type, so `noise` and `resonator` are alternatives
 for the oscillator slot, and `lpg`, `reso` and `elements` are alternatives for
@@ -193,21 +193,22 @@ the notches into the classic jet sound.
 | B (DEPTH) | feedback / resonance |
 | DEL + B | dry/wet — around the middle gives the deepest notches |
 
-### irbody — reverb effect (body / space)
+### irbody — reverb effect (instrument bodies)
 
-Puts the synth inside a violin body, a piano soundboard, a metal plate or a small
-space. The objects are models rather than samples, and the model is played
-instead of convolved: a bank of resonances for the object's own modes, a network
-of delay lines for the diffuse part, and early reflections for the spaces. It is
-a reverb effect, so it runs last: whatever the modulation units and the delay
-have made is what it puts in the body or the room.
+Puts the synth inside a body: a violin or cello soundbox, a piano soundboard, a
+guitar, a marimba bar, a metal plate, a clarinet bore, a drum shell. The bodies
+are models rather than samples, and the model is played instead of convolved: a
+bank of resonances for the object's own modes and a network of delay lines for
+the diffuse part. It is a reverb effect, so it runs last: whatever the modulation
+units and the delay have made is what it puts in the body.
 
 The models are physical: the violin, cello and guitar use the air and wood
 resonances of the real instruments (A0, B1-, B1+ and the bridge hill), the wood
 preset the free-free bar series of a marimba bar, the steel preset a plate-like
-inharmonic series with an even, long decay. On top of the modes each object has a
-diffuse tail whose high frequencies die away faster than its low ones, and the
-spaces have early reflections instead of modes. All of that lives in
+inharmonic series with an even, long decay, the clarinet the odd harmonics of a
+closed-open tube with the damping of a wooden bore, and the drum the few modes of
+a cylindrical shell. On top of the modes each object has a diffuse tail whose
+high frequencies die away faster than its low ones. All of that lives in
 [`units/irbody/src/ir_model.h`](units/irbody/src/ir_model.h); the same header
 still writes the responses out as WAV files in [`ir/`](ir) through
 [`tools/make_irs.cpp`](tools/make_irs.cpp), and those files are what the unit's
@@ -215,7 +216,7 @@ levels were measured against.
 
 | Control | Function |
 | --- | --- |
-| A (TIME) | object: violin, cello, piano, guitar, wood, steel, room, plate |
+| A (TIME) | body: violin, cello, piano, guitar, wood, steel, clarinet, drum |
 | B (DEPTH) | damping of the wet signal, dark .. open |
 | DEL + B | dry/wet |
 
@@ -224,20 +225,20 @@ taps in sixteen frequency domain partitions, a 512 point FFT every 256 samples,
 603 KB of SDRAM for the spectra and 5.3 ms of latency. It worked and it was, by
 a wide margin, the most expensive thing here. The network is the same model
 without the finite response in it: eleven resonators at most, four delay lines in
-a feedback delay network, two allpasses, one damping low pass — 53 KB of SDRAM
-and no FFT, measured at 29 ns/frame against 48 for the convolution.
+a feedback delay network, two allpasses, one damping low pass — 46 KB of SDRAM
+and no FFT, measured at 28 ns/frame against 47 for the convolution.
 
 The one audible difference is the sustain. An 85 ms response stops 85 ms after
 the sound that fed it; a network keeps ringing while it is fed, so a held note
 now sits in the body instead of leaving it after a few frames. That is what a
 body does, and it is the one place where this is not only cheaper but better.
 
-The levels of the bank and the tail per object are fitted, band by band, to the
+The levels of the bank and the tail per body are fitted, band by band, to the
 responses the old version convolved with, and the result is within 1.3 to 2.5 dB
-per third-octave band (weighted by level) for the six bodies, 5 dB for the room
-and 9 dB for the plate — the two spaces are the ones without resonances to anchor
-them. Fed a musical signal at full wet, all eight land within 0.8 dB of where
-they were.
+per third-octave band (weighted by level) for six of the eight, 4 dB for the
+clarinet and 7 dB for the marimba bar, whose modes sit high and leave the low end
+to the tail. Fed a musical signal at full wet, all eight land within 0.4 dB of
+where they were.
 
 A switch crossfades between two engines over 85 ms, so turning the knob cannot
 click. Everything is set up in the parameter callback: turning the knob builds
@@ -314,7 +315,7 @@ those helpers are table lookups.
 | `reso` | 1.5 KB | 0.4 KB | 13 ns/frame |
 | `elements` | 2.1 KB | 0.7 KB | 18 ns/frame |
 | `barber` | 1.8 KB | 0.3 KB | 45 ns/frame |
-| `irbody` | 10.1 KB | 53 KB SDRAM | 29 ns/frame |
+| `irbody` | 9.6 KB | 46 KB SDRAM | 28 ns/frame |
 
 ## Installing on the NTS-1
 
@@ -375,12 +376,13 @@ so your units cannot collide with someone else's.
 * A modfx unit only gets the two knobs (`TIME`, `DEPTH`); the NTS-1 does not
   hand modulation effects any more parameters, which is why `lpg` and `reso`
   have no extra edit page.
-* `irbody` is mono in the wet path, so the tail is centred, and its tails are
-  short by design: these are bodies and small rooms, not halls. Its wet path
-  now rings for as long as it is fed, where the convolution stopped after 85 ms.
+* `irbody` is mono in the wet path, so the body is centred, and its tails are
+  short by design: these are bodies, not halls — for a space, put a stock reverb
+  after it. Its wet path now rings for as long as it is fed, where the
+  convolution stopped after 85 ms.
 * The mkI gives a modfx unit 6 KB of SRAM and a delay or reverb unit 12 KB of
   code space plus 2.4 MB of SDRAM; all units stay well inside those budgets now
-  that none of them links the maths library. `irbody` uses 53 KB of that SDRAM
+  that none of them links the maths library. `irbody` uses 46 KB of that SDRAM
   for its delay lines, and is the one unit that still carries libm (about 1 KB of
   RAM and 2 KB of code): it builds its coefficients from `ir_model.h`, which uses
   `sinf`, `cosf` and `expf` to describe the objects, and that header is shared
