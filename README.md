@@ -120,6 +120,14 @@ be dialled away any more — every position of the knob is a shape — so for a 
 dusty sound use velvet or crackle, which carry their own transient at grain
 level.
 
+### The LFO
+
+The synth routes its LFO to the shape parameter, and both oscillators honour it:
+`noise` adds it to the A knob (half the LFO sweeps the character from one end to
+the other) and `resonator` adds it to the decay, so a ringing bank breathes with
+the LFO the way it moves with the knob. It arrives smoothed at 750 updates a
+second, so a fast LFO walks the filters instead of stepping them block by block.
+
 ### resonator — oscillator (multi model modal resonator)
 
 `elements` is the same engine with the pitch set by hand, because a modulation

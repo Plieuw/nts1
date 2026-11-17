@@ -162,7 +162,9 @@ struct State {
   float keytrk;  // 0..1
   float grain;   // 0..1
   float level;   // 0..1
-  float shape;   // A knob, 0..1
+  float shape;        // the A knob plus the LFO, 0..1
+  float shape_base;   // the A knob alone
+  float lfo;          // smoothed LFO offset handed over by the synth
   float shift;   // B knob, 0..1
   float trans;   // 0..1, transient knob: where in the morph to sit
 
@@ -617,6 +619,8 @@ void OSC_INIT(uint32_t platform, uint32_t api) {
   s.grain = 0.35f;
   s.level = 0.8f;
   s.shape = 0.5f;
+  s.shape_base = 0.5f;
+  s.lfo = 0.f;
   s.shift = 0.5f;
   s.trans = 0.25f;  // the stick point of the sweep: a click for any material
 
@@ -635,6 +639,17 @@ void OSC_INIT(uint32_t platform, uint32_t api) {
 void OSC_CYCLE(const user_osc_param_t *const params, int32_t *yn,
                const uint32_t frames) {
   updatePitch(params);
+
+  // The synth hands its LFO to the unit as an offset on the shape parameter,
+  // the same way the factory oscillator adds it to its wavetable position. Half
+  // of it is enough to move the character across the whole knob, and it is
+  // smoothed so a fast LFO does not step the filters block by block.
+  s.lfo += (q31_to_f32(params->shape_lfo) - s.lfo) * 0.10f;
+  const float sh = clipminmaxf(0.f, s.shape_base + 0.5f * s.lfo, 1.f);
+  if (fabsf(sh - s.shape) > 0.0015f) {
+    s.shape = sh;
+    updateShape();
+  }
 
   q31_t *__restrict y = (q31_t *)yn;
 
@@ -686,7 +701,8 @@ void OSC_MUTE(const user_osc_param_t *const params) {
 void OSC_PARAM(uint16_t index, uint16_t value) {
   switch (index) {
   case k_user_osc_param_shape:
-    s.shape = param_val_to_f32(value);
+    s.shape_base = param_val_to_f32(value);
+    s.shape = clipminmaxf(0.f, s.shape_base + 0.5f * s.lfo, 1.f);
     updateShape();
     break;
 

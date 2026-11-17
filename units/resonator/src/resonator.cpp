@@ -275,7 +275,9 @@ struct Voice {
 struct State {
   // User parameters.
   int model;
-  float decay;    // 0..1, the A knob
+  float decay;      // 0..1, the A knob plus the LFO
+  float decay_base; // the A knob alone
+  float lfo;        // smoothed LFO offset handed over by the synth
   float bright;   // 0..1, the B knob
   float strike;   // 0..1
   float pos;      // 0..1
@@ -548,6 +550,8 @@ void OSC_INIT(uint32_t platform, uint32_t api) {
 
   s.model = 0;
   s.decay = 0.45f;
+  s.decay_base = 0.45f;
+  s.lfo = 0.f;
   s.bright = 0.55f;
   s.strike = 0.55f;
   s.pos = 0.32f;
@@ -574,6 +578,22 @@ void OSC_INIT(uint32_t platform, uint32_t api) {
 void OSC_CYCLE(const user_osc_param_t *const params, int32_t *yn,
                const uint32_t frames) {
   updatePitch(params);
+
+  // The synth's LFO arrives as an offset on the shape parameter, which is the
+  // A knob here: the decay time breathes. Re-landing the coefficients is what a
+  // move of the knob itself already does, so a ringing bank follows the LFO the
+  // way it follows the knob — only when it has moved enough to hear.
+  s.lfo += (q31_to_f32(params->shape_lfo) - s.lfo) * 0.10f;
+  const float dec = clipminmaxf(0.f, s.decay_base + 0.35f * s.lfo, 1.f);
+  if (fabsf(dec - s.decay) > 0.004f) {
+    s.decay = dec;
+    for (int i = 0; i < kVoices; ++i) {
+      Voice &v = s.voice[i];
+      if (v.modes > 0)
+        voiceCoefficients(v, v.f0, v.note);
+    }
+  }
+
   render((q31_t *)yn, frames);
 }
 
@@ -602,7 +622,8 @@ void OSC_PARAM(uint16_t index, uint16_t value) {
 
   switch (index) {
   case k_user_osc_param_shape:  // 10 bit
-    s.decay = param_val_to_f32(value);
+    s.decay_base = param_val_to_f32(value);
+    s.decay = clipminmaxf(0.f, s.decay_base + 0.35f * s.lfo, 1.f);
     break;
 
   case k_user_osc_param_shiftshape:  // 10 bit
