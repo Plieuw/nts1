@@ -59,13 +59,15 @@ fetch_sdk() {
 build_unit() {
   local unit="$1"
   echo ">> building $unit"
+  # clean, because the package only picks up manifest.json when it is rebuilt:
+  # without it a change to a parameter range would not reach the unit file.
   make -C "$ROOT/units/$unit" \
     PLATFORMDIR="$PLATFORM_DIR" \
     TOOLSDIR="$SDK_DIR/tools" \
     EXTDIR="$SDK_DIR/platform/ext" \
     GCC_BIN_PATH="$GCC_PATH" \
     INSTALLDIR="$DIST" \
-    install
+    clean install
 }
 
 mkdir -p "$DIST"

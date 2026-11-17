@@ -1,13 +1,13 @@
 {
-    "header" :
-    {
-        "platform" : "nutekt-digital",
-        "module" : "modfx",
-        "api" : "1.1-0",
-        "dev_id" : 0,
-        "prg_id" : 3,
-        "version" : "1.0-0",
-        "name" : "reso",
-        "num_param" : 0
+    "header": {
+        "platform": "nutekt-digital",
+        "module": "modfx",
+        "api": "1.1-0",
+        "dev_id": 0,
+        "prg_id": 3,
+        "version": "1.0-0",
+        "name": "reso",
+        "num_param": 0,
+        "params": []
     }
 }

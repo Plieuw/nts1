@@ -51,7 +51,7 @@ Noise is the sound source everything else in this collection likes to chew on.
 | --- | --- |
 | A (SHAPE) | character of the selected algorithm |
 | B (SHIFT) | spectral tilt: dark ↔ bright |
-| Edit 1 | `Algo`: white, pink, brown, velvet, crackle, step, tuned, hybrid |
+| Edit 1 | `Algo`: white, pink, brown, velvet, crackle, step, tuned, hybrid (the menu counts from 1) |
 | Edit 2 | `Tune`: ± 24 semitones |
 | Edit 3 | `Keytrk`: how much the algorithm follows the played note |
 | Edit 4 | `Grain`: grain length for the impulse based algorithms |
@@ -112,7 +112,7 @@ long you hear it ring.
 | --- | --- |
 | A (SHAPE) | decay, 0.1 s .. 12 s |
 | B (SHIFT) | brightness: how long the high modes live, and how open the strike is |
-| Edit 1 | `Model`: 0 string, 1 membrane, 2 plate, 3 bell, 4 multi, 5 chime, 6 kalimba, 7 glass, 8 pipe |
+| Edit 1 | `Model`: 0 string, 1 membrane, 2 plate, 3 bell, 4 multi, 5 chime, 6 kalimba, 7 glass, 8 pipe (the menu counts from 1) |
 | Edit 2 | `Strike`: soft mallet .. hard hammer |
 | Edit 3 | `Pos`: where the strike lands across the object |
 | Edit 4 | `Tune`: ± 24 semitones |
@@ -369,13 +369,18 @@ so your units cannot collide with someone else's.
 
 * Everything here was written and verified by compiling and running the DSP on a
   host, not on hardware. Levels and ranges are measured, but not auditioned.
-* The files in `dist/` here were built with gcc 10.3, because the gcc 5.4
-  toolchain Korg recommends is 32 bit only. Run `./scripts/build.sh` or the
-  GitHub workflow (which installs the 32 bit libs and uses 5.4) if you want
-  binaries from the exact toolchain Korg ships for the mkI.
-* A modfx unit only gets the two knobs (`TIME`, `DEPTH`); the NTS-1 does not
-  hand modulation effects any more parameters, which is why `lpg` and `reso`
-  have no extra edit page.
+* The unit files themselves are not in the repository: `./scripts/build.sh` and
+  the GitHub workflow build them with the gcc 5.4 toolchain Korg recommends for
+  the mkI (which is 32 bit only, so it needs `libc6:i386`).
+* What the API hands a unit is what these units use, and nothing more is
+  reachable: an oscillator gets knob A (`shape`), knob B (`shift-shape`) and six
+  edit parameters (hold `OSC` and turn `TYPE` to pick one, then turn the `B`
+  knob) — so `noise` and `resonator` have an edit page and fill all six. A
+  modfx unit gets only the two knobs (`TIME`, `DEPTH`), a delay and a reverb get
+  those plus a dry/wet that lives on the shift parameter (`DEL`/`REVERB` held,
+  then the `B` knob). There are no sub-menus in the format: parameter names and
+  ranges are fixed in the manifest, so a deeper menu would have to be faked with
+  one parameter as a page selector, which is why none of these need one.
 * `irbody` is mono in the wet path, so the body is centred, and its tails are
   short by design: these are bodies, not halls — for a space, put a stock reverb
   after it. Its wet path now rings for as long as it is fed, where the
