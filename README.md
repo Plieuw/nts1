@@ -8,7 +8,7 @@ space model in the reverb slot — a unit for every user slot the instrument has
 | Unit | Slot | What it does | File |
 | --- | --- | --- | --- |
 | `noise` | OSC | Eight noise algorithms, from white to tuned resonance | `noise.ntkdigunit` |
-| `resonator` | OSC | Nine model modal resonator, four voices, played from the keyboard | `resonator.ntkdigunit` |
+| `resonator` | OSC | 23 model modal resonator, four voices, played from the keyboard | `resonator.ntkdigunit` |
 | `lpg` | MOD | Vactrol style low pass gate driven by an envelope follower | `lpg.ntkdigunit` |
 | `reso` | MOD | Twelve mode resonator with beating pairs, Rings in spirit | `reso.ntkdigunit` |
 | `elements` | MOD | Geometry morphing resonator: string, membrane, plate, bell | `elements.ntkdigunit` |
@@ -107,21 +107,47 @@ long you hear it ring.
 | 6 | kalimba | free-free tine, almost all of its energy in the first partials |
 | 7 | glass | circular plate with a free edge: handpan, glass harp, gong |
 | 8 | pipe | open air column: harmonic, a struck wood or bamboo tube |
+| 9 | marimba | tuned bar (1 : 3.9 : 9.2), warm, rings a second or two |
+| 10 | xylophone | undercut bar (1 : 3 : 6), brittle, all attack |
+| 11 | vibraphone | bar with every partial doubled a few cents apart: slow tremolo |
+| 12 | piano | stiff string with detuned unisons, hammered, long |
+| 13 | handpan | octave and fifth tuned steel, near harmonic, shimmering |
+| 14 | steel drum | octave led pan: the octave blooms over the note |
+| 15 | gong | dense inharmonic metal, beating, highs outlive the lows |
+| 16 | bowl | singing bowl: a few widely spaced modes, seconds long |
+| 17 | triangle | bent rod: almost nothing but high partials, very long |
+| 18 | woodblock | hollow block: two modes and a knock, a fifth of a second |
+| 19 | log drum | slit drum, hollow 1 : 2.75, short with a big fundamental |
+| 20 | tabla | loaded head, tuned almost harmonic, short and snappy |
+| 21 | trumpet | brass bore: every harmonic present, strident highs |
+| 22 | reed | stopped pipe with a reed: odd harmonics only, hollow |
 
 | Control | Function |
 | --- | --- |
 | A (SHAPE) | decay, 0.1 s .. 12 s |
 | B (SHIFT) | brightness: how long the high modes live, and how open the strike is |
-| Edit 1 | `Model`: 0 string, 1 membrane, 2 plate, 3 bell, 4 multi, 5 chime, 6 kalimba, 7 glass, 8 pipe (the menu counts from 1) |
+| Edit 1 | `Model`: 0 string, 1 membrane, 2 plate, 3 bell, 4 multi, 5 chime, 6 kalimba, 7 glass, 8 pipe, 9 marimba, 10 xylophone, 11 vibraphone, 12 piano, 13 handpan, 14 steel drum, 15 gong, 16 bowl, 17 triangle, 18 woodblock, 19 log drum, 20 tabla, 21 trumpet, 22 reed (the menu counts from 1) |
 | Edit 2 | `Strike`: soft mallet .. hard hammer |
 | Edit 3 | `Pos`: where the strike lands across the object |
 | Edit 4 | `Tune`: ± 24 semitones |
 | Edit 5 | `Level` |
 | Edit 6 | `Damp`: extra damping of the high modes |
 
+A model is a ratio set plus the way that object behaves under the knobs. On top
+of the ratios each one carries three numbers: how long it rings, how much faster
+its high modes die than its low ones, and how much of the strike reaches the top.
+That is what separates the two bars tuned to 1 : 4 : 10 — a xylophone is gone in
+a fraction of a second with nothing but attack, a vibraphone is still ringing
+when the next note comes — and it is how the wood block, the log drum and the
+tabla sit next to the plate and the bell instead of sounding like shorter
+versions of them. The models keep the knobs: `Damp` darkens any of them, `Strike`
+and `Pos` move the attack, `Tune` moves the note.
+
 The strike goes straight into the modes instead of through a coupling factor, so
 a short string is not a hundred times louder than a long bell: the decay knob
-changes the length of the note, not its level. `Pos` puts a node under the modes
+changes the length of the note, not its level. The nine models the unit started
+with set the reference level; every model added since is fitted to the same
+measured loudness, so switching models does not jump in volume. `Pos` puts a node under the modes
 a real bar would miss, which is the difference between striking a bar in the
 middle and at the end. The attack is normalised over the sum of the modes and
 over the keyboard — the measured 7:1 spread between the bottom and the top of the
@@ -310,7 +336,7 @@ those helpers are table lookups.
 | Unit | Text + data | SRAM | Cost |
 | --- | --- | --- | --- |
 | `noise` | 5.7 KB | 0.4 KB | 15 ns/frame |
-| `resonator` | 3.0 KB | 2.0 KB | 12 ns/frame (75 with four voices) |
+| `resonator` | 5.3 KB | 1.5 KB | 15 ns/frame (72 with four voices) |
 | `lpg` | 1.6 KB | 0.1 KB | 27 ns/frame |
 | `reso` | 1.5 KB | 0.4 KB | 13 ns/frame |
 | `elements` | 2.1 KB | 0.7 KB | 18 ns/frame |
