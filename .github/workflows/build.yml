@@ -34,10 +34,15 @@ jobs:
       - name: Show what was built
         run: ls -l dist
 
+      # The ELFs come along so the cycle counts in the README can be taken from
+      # the build the instrument actually gets, not from whatever gcc a sandbox
+      # happens to have.
       - uses: actions/upload-artifact@v4
         with:
           name: nts1-units
-          path: dist/*.ntkdigunit
+          path: |
+            dist/*.ntkdigunit
+            units/*/build/*.elf
           if-no-files-found: error
 
       - name: Attach units to the release
