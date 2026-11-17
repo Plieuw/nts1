@@ -22,6 +22,12 @@ jobs:
     # the checkout.
     permissions:
       contents: write
+    # A tag push and a release published for the same tag are two runs, and both
+    # of them attach files. One at a time per tag; branch builds are grouped by
+    # commit, so they do not queue behind each other.
+    concurrency:
+      group: units-${{ github.event.release.tag_name || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || github.sha }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
@@ -50,29 +56,43 @@ jobs:
           if-no-files-found: error
 
       # Cutting a beta is pushing a tag: this is the build the instrument gets,
-      # and these are its files. A release published by hand takes the same path
-      # as an existing release, so both ways end with the eight packages on it.
+      # and these are its files. The step decides by doing, not by asking: it
+      # uploads into the release for the tag, and only makes one when there is
+      # nothing to upload into. Asking first is what went wrong before — a probe
+      # can answer "no release" while the other run for the same tag is between
+      # its own probe and its own create, and then both of them create. A tag
+      # that already has a release therefore gets its packages replaced, and a
+      # release published by hand gets them the same way.
       # Deleting a tag fires a push event too, hence the deleted check.
       - name: Attach units to the release
         if: github.event_name == 'release' || (startsWith(github.ref, 'refs/tags/v') && !github.event.deleted)
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -eu
           tag="${{ github.event.release.tag_name || github.ref_name }}"
+          files=(dist/*.ntkdigunit)
 
-          if gh release view "$tag" >/dev/null 2>&1; then
-            echo "$tag exists, replacing its packages"
-            gh release upload "$tag" dist/*.ntkdigunit --clobber
+          if gh release upload "$tag" "${files[@]}" --clobber; then
+            echo "updated the release for $tag"
             exit 0
           fi
 
-          # A tag with a suffix in it is a test of the thing, not a finished
-          # release: v0.2.0-beta, v1.0.0-rc1. The notes are the commit list, to
-          # be edited afterwards.
+          # A tag with a suffix in it is not a finished release: v0.2.0-beta,
+          # v1.0.0-rc1. The notes are the commit list, to be edited afterwards.
           flags=""
           case "$tag" in
             *-*) flags="--prerelease" ;;
           esac
-          echo "creating $tag ${flags:+(prerelease)}"
-          gh release create "$tag" dist/*.ntkdigunit --title "$tag" --generate-notes $flags
+
+          if gh release create "$tag" "${files[@]}" --verify-tag --title "$tag" \
+              --generate-notes $flags; then
+            echo "created the release for $tag"
+            exit 0
+          fi
+
+          # The release appeared while this run was making it, so the create was
+          # refused: upload into the one that won instead of failing.
+          echo "the release for $tag appeared meanwhile, uploading into it"
+          gh release upload "$tag" "${files[@]}" --clobber

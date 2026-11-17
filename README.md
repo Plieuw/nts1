@@ -572,8 +572,9 @@ in the Makefile then line up.
 an artifact. Cutting a release is pushing a tag: the same workflow builds the
 units with gcc 5.4 and attaches the eight packages to a release, creating it with
 the commit list as its notes if it does not exist yet. A tag with a suffix
-(`v0.2.0-beta`) makes a prerelease, and a release published by hand gets its
-packages the same way.
+(`v0.2.0-beta`) makes a prerelease, a release published by hand gets its packages
+the same way, and a second run for a tag that already has a release replaces the
+packages on it rather than making another.
 
 ## Memory budgets
 
