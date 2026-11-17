@@ -43,9 +43,10 @@ inline float expNegSmall(float a) {
 }  // samples between filter coefficient updates
 
 struct Channel {
-  float env;   // envelope follower
-  float peak;  // slow peak tracker used to normalise the follower
-  float ic1;   // SVF integrator states
+  float env;       // envelope follower
+  float peak;      // slow peak tracker used to normalise the follower
+  float inv_peak;  // 1/peak, refreshed with the filter coefficients
+  float ic1;       // SVF integrator states
   float ic2;
   float a1;
   float a2;
@@ -66,6 +67,7 @@ State s;
 void clearChannel(Channel &c) {
   c.env = 0.f;
   c.peak = 1e-4f;
+  c.inv_peak = 1e4f;
   c.ic1 = 0.f;
   c.ic2 = 0.f;
   c.a1 = 1.f;
@@ -79,15 +81,20 @@ void updateCoefficients() {
   s.atk_coef = expNegSmall(1.f / (0.0012f * kFs));
 }
 
-// Openness (0..1) of one channel, and the matching band-pass cutoff.
+// Openness (0..1) of one channel: the follower normalised by the peak tracker,
+// smoothed by the LDR curve and scaled by the depth knob. Used for the gain and
+// for the cutoff alike, so the knob is applied once and not once per path.
 inline float openness(const Channel &c) {
-  float e = c.env / c.peak;
+  float e = c.env * c.inv_peak;
   e = clipminmaxf(0.f, e, 1.f);
   e = e * e * (3.f - 2.f * e);  // smoothstep, the non-linearity of the LDR
   return (1.f - s.depth) + s.depth * e;
 }
 
 void updateFilter(Channel &c) {
+  // The reciprocal is taken here rather than per sample, and the tracker only
+  // moves by 0.99998 per sample, so it is never more than one update stale.
+  c.inv_peak = 1.f / c.peak;
   const float fc = clipminmaxf(60.f, 180.f * pow2f(5.626f * openness(c)), 16000.f);
   const float g = fx_tanpif(clipminmaxf(0.0001f, fc / kFs, 0.45f));
   const float k = 0.9f;  // Q ~ 1.1, a touch of resonance keeps it vocal
@@ -120,8 +127,8 @@ void processChannel(const float *xn, float *yn, uint32_t frames, Channel &c) {
     if (c.peak < 1e-3f)
       c.peak = 1e-3f;
 
-    const float open = openness(c);
-    const float gain = (1.f - s.depth) + s.depth * open;
+    // The depth is already part of the openness.
+    const float gain = openness(c);
 
     const float v3 = in - c.ic2;
     const float v1 = c.a1 * c.ic1 + c.a2 * v3;
@@ -130,6 +137,15 @@ void processChannel(const float *xn, float *yn, uint32_t frames, Channel &c) {
     c.ic2 = 2.f * v2 - c.ic2;
 
     yn[i] = fx_softclipf(0.1f, v2 * gain * 1.2f);
+  }
+
+  // Between notes the follower and the filter fall through the last floats of
+  // the range, and the M4's FPU runs its denormal path for every one of them.
+  // At -300 dB there is nothing to keep, so the state is zeroed instead.
+  if (c.env < 1e-15f && fabsf(c.ic1) < 1e-15f && fabsf(c.ic2) < 1e-15f) {
+    c.env = 0.f;
+    c.ic1 = 0.f;
+    c.ic2 = 0.f;
   }
 }
 

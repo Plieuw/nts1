@@ -44,6 +44,11 @@ constexpr float kPi = 3.14159265358979f;
 
 constexpr int kFFT = 512;                     // FFT size
 constexpr int kHop = 256;                     // samples per block (5.3 ms latent)
+// The input of the convolution is real, so bin i and bin kFFT - i are each
+// other's conjugate: only the first half is accumulated and the inverse
+// transform is handed the mirror image. The half stops at a power of two so the
+// loop still vectorises on a host build; the Nyquist bin is added next to it.
+constexpr int kHalfBins = kFFT / 2;
 constexpr int kParts = 16;                    // -> 4096 taps, 85.3 ms
 constexpr int kIrLen = irmodel::kIrLen;
 constexpr int kPresetCount = irmodel::kPresetCount;
@@ -171,10 +176,12 @@ void accumulateWeighted(const float (*hre)[kFFT], const float (*him)[kFFT],
     const float *hr = hre[p];
     const float *hi = him[p];
 
-    for (int i = 0; i < kFFT; ++i) {
+    for (int i = 0; i < kHalfBins; ++i) {
       g_re[i] += w * (hr[i] * xr[i] - hi[i] * xi[i]);
       g_im[i] += w * (hr[i] * xi[i] + hi[i] * xr[i]);
     }
+    g_re[kHalfBins] += w * (hr[kHalfBins] * xr[kHalfBins] - hi[kHalfBins] * xi[kHalfBins]);
+    g_im[kHalfBins] += w * (hr[kHalfBins] * xi[kHalfBins] + hi[kHalfBins] * xr[kHalfBins]);
   }
 }
 
@@ -192,10 +199,22 @@ void accumulateUnit(const float (*hre)[kFFT], const float (*him)[kFFT]) {
     const float *hr = hre[p];
     const float *hi = him[p];
 
-    for (int i = 0; i < kFFT; ++i) {
+    for (int i = 0; i < kHalfBins; ++i) {
       g_re[i] += hr[i] * xr[i] - hi[i] * xi[i];
       g_im[i] += hr[i] * xi[i] + hi[i] * xr[i];
     }
+    g_re[kHalfBins] += hr[kHalfBins] * xr[kHalfBins] - hi[kHalfBins] * xi[kHalfBins];
+    g_im[kHalfBins] += hr[kHalfBins] * xi[kHalfBins] + hi[kHalfBins] * xr[kHalfBins];
+  }
+}
+
+// Fills the upper half of the spectrum with the mirror of the lower half. The
+// product of two real signals' spectra is Hermitian, so these are exactly the
+// values the full-length accumulation would have produced.
+void mirrorSpectrum() {
+  for (int i = kHalfBins + 1; i < kFFT; ++i) {
+    g_re[i] = g_re[kFFT - i];
+    g_im[i] = -g_im[kFFT - i];
   }
 }
 
@@ -228,6 +247,7 @@ void runBlock() {
     accumulateUnit(g_hre[s.active], g_him[s.active]);
   }
 
+  mirrorSpectrum();
   fft(g_re, g_im, true);
 
   for (int i = 0; i < kHop; ++i)

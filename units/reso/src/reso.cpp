@@ -121,6 +121,16 @@ void processChannel(const float *xn, float *yn, uint32_t frames, Channel &c) {
   const float *const a2 = s.a2;
   const float out_gain = s.out_gain;
 
+  // A bank that has rung down to the last floats would keep the FPU on its slow
+  // denormal path; at -300 dB there is nothing left to keep.
+  {
+    float mag = 0.f;
+    for (int n = 0; n < kModes; ++n)
+      mag += fabsf(c.y1[n]) + fabsf(c.y2[n]);
+    if (mag < 1e-15f)
+      clearChannel(c);
+  }
+
   for (uint32_t i = 0; i < frames; ++i) {
     const float raw = xn[i];
 

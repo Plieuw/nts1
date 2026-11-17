@@ -118,6 +118,17 @@ void DELFX_PROCESS(float *xn, uint32_t frames) {
   const int nframes = (int)frames;
   const float inc = s.rate / kFs;
 
+  // A cascade that has rung down to the last floats would keep the FPU on its
+  // slow denormal path for every stage; at -300 dB there is nothing to keep.
+  for (int ch = 0; ch < 2; ++ch) {
+    Channel &c = s.ch[ch];
+    float mag = fabsf(c.fb);
+    for (int i = 0; i < kStages; ++i)
+      mag += fabsf(c.a[i].y1) + fabsf(c.b[i].y1);
+    if (mag < 1e-15f)
+      clearChannel(c);
+  }
+
   for (int i = 0; i < nframes; ++i) {
     for (int ch = 0; ch < 2; ++ch) {
       Channel &c = s.ch[ch];
@@ -128,7 +139,7 @@ void DELFX_PROCESS(float *xn, uint32_t frames) {
       float xa = exc;
       for (int st = 0; st < kStages; ++st) {
         Stage &g = c.a[st];
-        const float y = s.ca * xa + g.x1 - s.ca * g.y1;
+        const float y = g.x1 + s.ca * (xa - g.y1);
         g.x1 = xa;
         g.y1 = y;
         xa = y;
@@ -137,7 +148,7 @@ void DELFX_PROCESS(float *xn, uint32_t frames) {
       float xb = exc;
       for (int st = 0; st < kStages; ++st) {
         Stage &g = c.b[st];
-        const float y = s.cb * xb + g.x1 - s.cb * g.y1;
+        const float y = g.x1 + s.cb * (xb - g.y1);
         g.x1 = xb;
         g.y1 = y;
         xb = y;

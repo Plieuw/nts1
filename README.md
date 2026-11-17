@@ -173,6 +173,9 @@ unit uses.
 
 The convolution runs in sixteen frequency domain partitions (FFT 512, hop 256),
 so an 85 ms response costs a fraction of what direct convolution would need.
+The input is real, so only the lower half of each spectrum is accumulated and
+the upper half is filled in as its mirror image, which halves the multiply and
+add work of the convolution itself.
 Block processing adds 5.3 ms of latency, which the dry path is delayed by as
 well so the two stay aligned. Responses end with a short fade, so the cut at
 85 ms is not audible.
@@ -235,18 +238,21 @@ without having to think about it:
   -70 dB (the longest are `reso` at its 5 s ring time and `elements` at its
   bell end, which is a very quiet but very long sustain by design).
 
-Measured on the host (x86, gcc 10.3, minimum of pinned runs, one 64 frame block
-at 48 kHz is 1.333 ms); the numbers are a comparison between the units, not an
-M4 prediction:
+Measured on the host (x86, gcc 10.3, minimum of five pinned runs, one 64 frame
+block at 48 kHz is 1.333 ms); the numbers are a comparison between the units,
+not an M4 prediction. One caveat: the SDK's lookup helpers are libm calls in the
+host harness, so the units that refresh coefficients while they run (`lpg`,
+`barber`) look relatively more expensive here than they are on the M4, where
+those helpers are table lookups.
 
 | Unit | Text + data | SRAM | Cost |
 | --- | --- | --- | --- |
 | `noise` | 11.7 KB | 0.4 KB | 15 ns/frame |
-| `lpg` | 1.5 KB | 0.1 KB | 13 ns/frame |
+| `lpg` | 1.6 KB | 0.1 KB | 27 ns/frame |
 | `reso` | 1.5 KB | 0.4 KB | 13 ns/frame |
-| `elements` | 3.1 KB | 0.7 KB | 17 ns/frame |
-| `barber` | 7.8 KB | 0.3 KB | 45 ns/frame |
-| `irbody` | 10.5 KB | 603 KB SDRAM | 56 ns/frame |
+| `elements` | 3.1 KB | 0.7 KB | 18 ns/frame |
+| `barber` | 7.9 KB | 0.3 KB | 44 ns/frame |
+| `irbody` | 10.7 KB | 603 KB SDRAM | 52 ns/frame |
 
 ## Installing on the NTS-1
 
