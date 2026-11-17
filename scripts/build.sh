@@ -18,7 +18,7 @@ PLATFORM_DIR="$SDK_DIR/platform/nutekt-digital"
 GCC_PATH="${GCC_BIN_PATH:-$SDK_DIR/tools/gcc/gcc-arm-none-eabi-5_4-2016q3/bin}"
 DIST="$ROOT/dist"
 
-ALL_UNITS=(noise lpg reso barber body)
+ALL_UNITS=(noise lpg reso elements barber body)
 
 fetch_sdk() {
   if [ ! -d "$SDK_DIR" ]; then

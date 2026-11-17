@@ -1,8 +1,8 @@
 # NTS-1 units
 
-Five custom units for the **KORG Nu:Tekt NTS-1 (mkI)**, built with the
+Six custom units for the **KORG Nu:Tekt NTS-1 (mkI)**, built with the
 [logue SDK](https://github.com/korginc/logue-sdk) v1.1-0. One noise oscillator,
-two modulation effects, and two delay effects — a body/IR convolution and an
+three modulation effects, and two delay effects — a body/IR convolution and an
 endless barberpole phaser.
 
 | Unit | Slot | What it does | File |
@@ -10,11 +10,13 @@ endless barberpole phaser.
 | `noise` | OSC | Eight noise algorithms, from white to tuned resonance | `noise.ntkdigunit` |
 | `lpg` | MOD | Vactrol style low pass gate driven by an envelope follower | `lpg.ntkdigunit` |
 | `reso` | MOD | Twelve mode resonator with beating pairs, Rings in spirit | `reso.ntkdigunit` |
+| `elements` | MOD | Geometry morphing resonator: string, membrane, plate, bell | `elements.ntkdigunit` |
 | `barber` | DELAY | Barberpole phaser that rises or falls forever | `barber.ntkdigunit` |
 | `irbody` | DELAY | Convolution with modelled instrument bodies and spaces | `irbody.ntkdigunit` |
 
-The NTS-1 has one slot per type, so `lpg` and `reso` are alternatives, as are
-`barber` and `irbody`. Loading them all is fine; you pick per slot.
+The NTS-1 has one slot per type, so `lpg`, `reso` and `elements` are
+alternatives, as are `barber` and `irbody`. Loading them all is fine; you pick
+per slot.
 
 Note that there is no user slot for an envelope generator on the NTS-1: the MOD
 slot only accepts (audio) modulation effects. `lpg` is the way to get an
@@ -73,6 +75,25 @@ feed it sustained sound and it turns into a tuned drone.
 | --- | --- |
 | A (TIME) | fundamental, 40 Hz .. 2 kHz |
 | B (DEPTH) | ring time, 0.1 s .. 5 s |
+
+### elements — modulation effect (geometry morphing resonator)
+
+Where `reso` keeps one fixed mode set, this one moves the modes themselves. The
+B-knob morphs the geometry: a stiff string first (harmonic series with the
+inharmonic stretch a real string has), then the Bessel ratios of a circular
+membrane, then the modes of a flat plate, and finally the inharmonic series of a
+bell. Decay, damping and the colour of the exciter follow along, so a string is
+short and bright and a bell rings long and dark — because that is what those
+objects do.
+
+It is an independent implementation inspired by the resonators of Mutable
+Instruments Elements, not a port: a modulation effect on the NTS-1 gets two
+knobs and no note information, so the pitch is set by hand here.
+
+| Control | Function |
+| --- | --- |
+| A (TIME) | fundamental, 40 Hz .. 2 kHz |
+| B (DEPTH) | geometry: string → membrane → plate → bell |
 
 ### barber — delay effect (barberpole phaser)
 
