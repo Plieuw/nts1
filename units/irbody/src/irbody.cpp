@@ -131,7 +131,10 @@ struct Engine {
   int ap2_pos;
 };
 
-Engine g_eng[2];
+// The engines are state, and this slot has 2.4 MB of SDRAM against 12 KB of
+// SRAM: keeping them there is what leaves room for the code. The section is not
+// zeroed at load, so every field is written by clearEngine before it is read.
+Engine g_eng[2] __sdram;
 
 struct State {
   int active;   // engine slot in the output
@@ -148,7 +151,7 @@ struct State {
   int ready;    // set once the first engine has been built
 };
 
-State s;
+State s __sdram;
 
 void clearEngine(Engine &e) {
   for (int k = 0; k < kMaxModes; ++k) {
