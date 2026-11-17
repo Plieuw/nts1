@@ -61,6 +61,7 @@ struct State {
   float a1[kModes];
   float a2[kModes];
   Channel ch[2];
+  int active_modes;  // modes below Nyquist, the rest is silent
 };
 
 State s;
@@ -83,6 +84,8 @@ void updateCoefficients() {
   // gain follows the decay time to keep the effect usable over the whole range.
   s.out_gain = 6.f * (1.f + 4.f * s.decay * s.decay);
 
+  int active = 0;
+
   for (int n = 0; n < kModes; ++n) {
     const float f = f0 * kRatio[n];
 
@@ -93,6 +96,10 @@ void updateCoefficients() {
       continue;
     }
 
+    // The ratios only go up, so the modes from here on are the ones to run:
+    // at a high fundamental that is often half the bank or less.
+    active = n + 1;
+
     const float tn = tau * pow2f(-0.2885f * (float)n);  // high modes die first
     const float r = expNegSmall(1.f / (tn * fs));
 
@@ -100,9 +107,17 @@ void updateCoefficients() {
     s.a2[n] = -r * r;
     s.b0[n] = 0.5f * (1.f - r * r) / (1.f + 0.6f * (float)n);
   }
+
+  s.active_modes = active;
 }
 
 void processChannel(const float *xn, float *yn, uint32_t frames, Channel &c) {
+  const int modes = s.active_modes;
+  const float *const b0 = s.b0;
+  const float *const a1 = s.a1;
+  const float *const a2 = s.a2;
+  const float out_gain = s.out_gain;
+
   for (uint32_t i = 0; i < frames; ++i) {
     const float raw = xn[i];
 
@@ -113,14 +128,14 @@ void processChannel(const float *xn, float *yn, uint32_t frames, Channel &c) {
     const float exc = c.hp_y;
     float acc = 0.f;
 
-    for (int n = 0; n < kModes; ++n) {
-      const float y = s.b0[n] * exc + s.a1[n] * c.y1[n] + s.a2[n] * c.y2[n];
+    for (int n = 0; n < modes; ++n) {
+      const float y = b0[n] * exc + a1[n] * c.y1[n] + a2[n] * c.y2[n];
       c.y2[n] = c.y1[n];
       c.y1[n] = y;
       acc += y;
     }
 
-    yn[i] = fx_softclipf(0.15f, acc * s.out_gain);
+    yn[i] = fx_softclipf(0.15f, acc * out_gain);
   }
 }
 

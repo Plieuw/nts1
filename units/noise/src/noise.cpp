@@ -118,6 +118,8 @@ struct State {
   float sh_ratio;        // sample & hold rate, as a multiple of the note
   float hybrid_mix;      // band-pass <-> sine
   float velvet_gain;     // compensates the impulse density
+  float svf_gain;        // output trim of the tracking band-pass
+  float sh_inc;          // sample & hold phase step per sample
   int   trans_type;      // shape of the note-on transient
   float trans_coef;      // decay of the fast transient envelope
   float trans_decay2;    // decay of the slow transient envelope
@@ -250,7 +252,35 @@ void updateTransient() {
   updatePing();
 }
 
-void updateDerived() {
+// A filtered impulse train loses level quickly as the grains get longer, so the
+// compensation follows both the density and the smoothing.
+void updateVelvetGain() {
+  s.velvet_gain = clipminmaxf(
+      0.5f, 1.15f / sqrtf(s.velvet_density * s.grain_lp * 0.5f), 600.f);
+}
+
+// The knobs update only what they change: a repeat of the old single pass over
+// everything cost twelve expf() and a sqrtf() per event, most of them for values
+// that had not moved.
+void updateShape() {
+  // Impulse / event densities, per sample.
+  s.velvet_density = clipminmaxf(0.f, 0.0005f * expf(6.00f * s.shape), 0.25f);
+  s.crackle_rate = clipminmaxf(0.f, 0.00002f * expf(8.50f * s.shape), 0.2f);
+
+  // Sample & hold rate, 1x .. 64x the note frequency.
+  s.sh_ratio = expf(4.16f * s.shape);
+
+  // Tracking band-pass: Q from 1.5 up to 60, and the output trim that goes with
+  // it. Both are block constants, so they are not recomputed per sample.
+  s.svf_k = 1.f / (1.5f * expf(3.70f * s.shape));
+  s.svf_gain = clipminmaxf(0.8f, 0.35f * sqrtf(1.f / s.svf_k), 6.f);
+
+  s.hybrid_mix = s.shape;
+
+  updateVelvetGain();
+}
+
+void updateGrain() {
   // 0.5 ms .. 75 ms smoothing of impulses and sample & hold steps.
   const float smooth_tau = 0.0005f * expf(5.01f * s.grain);
   s.grain_lp = 1.f - expf(-1.f / (smooth_tau * (float)k_samplerate));
@@ -259,23 +289,12 @@ void updateDerived() {
   const float decay_tau = 0.002f * expf(5.30f * s.grain);
   s.grain_coef = expf(-1.f / (decay_tau * (float)k_samplerate));
 
-  // Impulse / event densities, per sample.
-  s.velvet_density = clipminmaxf(0.f, 0.0005f * expf(6.00f * s.shape), 0.25f);
-  s.crackle_rate = clipminmaxf(0.f, 0.00002f * expf(8.50f * s.shape), 0.2f);
+  updateVelvetGain();
+}
 
-  // Sample & hold rate, 1x .. 64x the note frequency.
-  s.sh_ratio = expf(4.16f * s.shape);
-
-  // Tracking band-pass: Q from 1.5 up to 60.
-  s.svf_k = 1.f / (1.5f * expf(3.70f * s.shape));
-
-  s.hybrid_mix = s.shape;
-
-  // A filtered impulse train loses level quickly as the grains get longer, so
-  // the compensation follows both the density and the smoothing.
-  s.velvet_gain = clipminmaxf(
-      0.5f, 1.15f / sqrtf(s.velvet_density * s.grain_lp * 0.5f), 600.f);
-
+void updateDerived() {
+  updateShape();
+  updateGrain();
   updateTransient();
 }
 
@@ -290,6 +309,7 @@ void updatePitch(const user_osc_param_t *params) {
 
   s.w0 = osc_w0f_for_note(ni, nf);
   s.freq = s.w0 * (float)k_samplerate;
+  s.sh_inc = s.w0 * s.sh_ratio;
 
   updatePing();
 
@@ -342,7 +362,7 @@ inline float crackleNoise() {
 }
 
 inline float stepNoise() {
-  s.sh_phase += s.w0 * s.sh_ratio;
+  s.sh_phase += s.sh_inc;
   while (s.sh_phase >= 1.f) {
     s.sh_phase -= 1.f;
     s.sh_hold = randbi();
@@ -360,7 +380,7 @@ inline float tunedNoise() {
   s.ic1 = 2.f * v1 - s.ic1;
   s.ic2 = 2.f * v2 - s.ic2;
 
-  return v1 * clipminmaxf(0.8f, 0.35f * sqrtf(1.f / s.svf_k), 6.f);
+  return v1 * s.svf_gain;
 }
 
 inline float hybridNoise() {
@@ -403,6 +423,89 @@ inline float transientSample() {
   return v * s.trans_gain * s.trans_level;
 }
 
+/*---------------------------------------------------------------------------*
+ * Block rendering
+ *
+ * The algorithm is a template parameter, so it is dispatched once per block
+ * instead of once per sample, and everything that only moves with a knob is
+ * read once per block as well.
+ *---------------------------------------------------------------------------*/
+
+template <int A>
+inline float noiseSample();
+
+template <>
+inline float noiseSample<kAlgoWhite>() {
+  return osc_white();
+}
+
+template <>
+inline float noiseSample<kAlgoPink>() {
+  return pinkNoise();
+}
+
+template <>
+inline float noiseSample<kAlgoBrown>() {
+  return brownNoise();
+}
+
+template <>
+inline float noiseSample<kAlgoVelvet>() {
+  return velvetNoise();
+}
+
+template <>
+inline float noiseSample<kAlgoCrackle>() {
+  return crackleNoise();
+}
+
+template <>
+inline float noiseSample<kAlgoStep>() {
+  return stepNoise();
+}
+
+template <>
+inline float noiseSample<kAlgoTuned>() {
+  return tunedNoise();
+}
+
+template <>
+inline float noiseSample<kAlgoHybrid>() {
+  return hybridNoise();
+}
+
+template <int A>
+void renderBlock(q31_t *__restrict y, const uint32_t frames) {
+  const float gain = kAlgoGain[A];
+  const float tilt = s.shift;
+  const float lo_gain = 1.5f - tilt;
+  const float hi_gain = 0.25f + 1.5f * tilt;
+  const float level = s.level;
+  const float tilt_coef = 0.16f;  // one-pole around 1.3 kHz at 48 kHz
+
+  q31_t *const y_e = y + frames;
+
+  for (; y != y_e; ++y) {
+    float x = noiseSample<A>() * gain;
+
+    // The transient goes in before the tilt, so the osc keeps its own colour.
+    x += transientSample();
+
+    // Spectral tilt: crossfade between the low and the high part of the signal.
+    s.tilt_lp += (x - s.tilt_lp) * tilt_coef;
+    const float lo = s.tilt_lp;
+    const float hi = x - lo;
+    x = lo * lo_gain + hi * hi_gain;
+
+    // DC blocker, needed for the integrator based algorithms.
+    const float dc = x - s.dc_x + 0.995f * s.dc_y;
+    s.dc_x = x;
+    s.dc_y = dc;
+
+    *y = f32_to_q31(osc_softclipf(0.08f, dc * level * kOutGain));
+  }
+}
+
 }  // namespace
 
 /*---------------------------------------------------------------------------*
@@ -438,60 +541,34 @@ void OSC_CYCLE(const user_osc_param_t *const params, int32_t *yn,
                const uint32_t frames) {
   updatePitch(params);
 
-  const float tilt = s.shift;
-  const float tilt_coef = 0.16f;  // one-pole around 1.3 kHz at 48 kHz
-
   q31_t *__restrict y = (q31_t *)yn;
-  const q31_t *const y_e = y + frames;
 
-  for (; y != y_e;) {
-    float x;
-
-    switch (s.algo) {
-    case kAlgoPink:
-      x = pinkNoise();
-      break;
-    case kAlgoBrown:
-      x = brownNoise();
-      break;
-    case kAlgoVelvet:
-      x = velvetNoise();
-      break;
-    case kAlgoCrackle:
-      x = crackleNoise();
-      break;
-    case kAlgoStep:
-      x = stepNoise();
-      break;
-    case kAlgoTuned:
-      x = tunedNoise();
-      break;
-    case kAlgoHybrid:
-      x = hybridNoise();
-      break;
-    case kAlgoWhite:
-    default:
-      x = osc_white();
-      break;
-    }
-
-    x *= kAlgoGain[s.algo];
-
-    // The transient goes in before the tilt, so the osc keeps its own colour.
-    x += transientSample();
-
-    // Spectral tilt: crossfade between the low and the high part of the signal.
-    s.tilt_lp += (x - s.tilt_lp) * tilt_coef;
-    const float lo = s.tilt_lp;
-    const float hi = x - lo;
-    x = lo * (1.5f - tilt) + hi * (0.25f + 1.5f * tilt);
-
-    // DC blocker, needed for the integrator based algorithms.
-    const float dc = x - s.dc_x + 0.995f * s.dc_y;
-    s.dc_x = x;
-    s.dc_y = dc;
-
-    *(y++) = f32_to_q31(osc_softclipf(0.08f, dc * s.level * kOutGain));
+  switch (s.algo) {
+  case kAlgoPink:
+    renderBlock<kAlgoPink>(y, frames);
+    break;
+  case kAlgoBrown:
+    renderBlock<kAlgoBrown>(y, frames);
+    break;
+  case kAlgoVelvet:
+    renderBlock<kAlgoVelvet>(y, frames);
+    break;
+  case kAlgoCrackle:
+    renderBlock<kAlgoCrackle>(y, frames);
+    break;
+  case kAlgoStep:
+    renderBlock<kAlgoStep>(y, frames);
+    break;
+  case kAlgoTuned:
+    renderBlock<kAlgoTuned>(y, frames);
+    break;
+  case kAlgoHybrid:
+    renderBlock<kAlgoHybrid>(y, frames);
+    break;
+  case kAlgoWhite:
+  default:
+    renderBlock<kAlgoWhite>(y, frames);
+    break;
   }
 }
 
@@ -515,6 +592,7 @@ void OSC_PARAM(uint16_t index, uint16_t value) {
   switch (index) {
   case k_user_osc_param_shape:
     s.shape = param_val_to_f32(value);
+    updateShape();
     break;
 
   case k_user_osc_param_shiftshape:
@@ -540,6 +618,7 @@ void OSC_PARAM(uint16_t index, uint16_t value) {
 
   case k_user_osc_param_id4:
     s.grain = clipminmaxf(0.f, (float)value * 0.01f, 1.f);
+    updateGrain();
     break;
 
   case k_user_osc_param_id5:
@@ -548,11 +627,10 @@ void OSC_PARAM(uint16_t index, uint16_t value) {
 
   case k_user_osc_param_id6:
     s.trans = clipminmaxf(0.f, (float)value * 0.01f, 1.f);
+    updateTransient();
     break;
 
   default:
     break;
   }
-
-  updateDerived();
 }

@@ -149,9 +149,16 @@ void buildPartitions(int preset) {
 }
 
 // Adds one response's contribution, scaled by w, to the spectrum of the block.
-void accumulate(const float (*hre)[kFFT], const float (*him)[kFFT], float w) {
+// Only used while two responses are crossfading.
+void accumulateWeighted(const float (*hre)[kFFT], const float (*him)[kFFT],
+                        float w) {
+  if (w == 0.f)
+    return;
+
   for (int p = 0; p < kParts; ++p) {
-    const int idx = (s.ring - p + kParts) % kParts;
+    int idx = s.ring - p;
+    if (idx < 0)
+      idx += kParts;
     const float *xr = g_xre[idx];
     const float *xi = g_xim[idx];
     const float *hr = hre[p];
@@ -160,6 +167,27 @@ void accumulate(const float (*hre)[kFFT], const float (*him)[kFFT], float w) {
     for (int i = 0; i < kFFT; ++i) {
       g_re[i] += w * (hr[i] * xr[i] - hi[i] * xi[i]);
       g_im[i] += w * (hr[i] * xi[i] + hi[i] * xr[i]);
+    }
+  }
+}
+
+// The steady state, and the only place the unit spends its time when a knob is
+// not turning. Multiplying by one is a no-op, so it gets its own loop: four
+// multiplies per bin fewer, and no weight in the loop that the compiler has to
+// keep around.
+void accumulateUnit(const float (*hre)[kFFT], const float (*him)[kFFT]) {
+  for (int p = 0; p < kParts; ++p) {
+    int idx = s.ring - p;
+    if (idx < 0)
+      idx += kParts;
+    const float *xr = g_xre[idx];
+    const float *xi = g_xim[idx];
+    const float *hr = hre[p];
+    const float *hi = him[p];
+
+    for (int i = 0; i < kFFT; ++i) {
+      g_re[i] += hr[i] * xr[i] - hi[i] * xi[i];
+      g_im[i] += hr[i] * xi[i] + hi[i] * xr[i];
     }
   }
 }
@@ -185,11 +213,13 @@ void runBlock() {
   }
 
   const bool fading = (s.target >= 0);
-  const float w = fading ? s.fade : 0.f;
 
-  accumulate(g_hre[s.active], g_him[s.active], fading ? 1.f - w : 1.f);
-  if (fading)
-    accumulate(g_hre[s.target], g_him[s.target], w);
+  if (fading) {
+    accumulateWeighted(g_hre[s.active], g_him[s.active], 1.f - s.fade);
+    accumulateWeighted(g_hre[s.target], g_him[s.target], s.fade);
+  } else {
+    accumulateUnit(g_hre[s.active], g_him[s.active]);
+  }
 
   fft(g_re, g_im, true);
 

@@ -79,6 +79,7 @@ struct State {
   float exc_coef;  // exciter low pass
   float out_gain;
   Channel ch[2];
+  int active_modes;  // modes below Nyquist, the rest is silent
 };
 
 State s;
@@ -116,6 +117,8 @@ void updateCoefficients() {
   const float tau = 0.35f * pow2f(3.f * g);          // 0.35 s .. 2.8 s
   const float damp = 0.30f - 0.05f * g;              // harder geometries ring longer
 
+  int active = 0;
+
   for (int k = 0; k < kModes; ++k) {
     const float ratio =
         s.ratio[i0][k] + (s.ratio[i0 + 1][k] - s.ratio[i0][k]) * t;
@@ -128,6 +131,12 @@ void updateCoefficients() {
       continue;
     }
 
+    // Every mode set is sorted by frequency, so the ones past this point are
+    // all above Nyquist: the sample loop can stop here instead of running the
+    // tail of the bank for nothing. It matters most at the top of the range,
+    // where a bell keeps two or three modes.
+    active = k + 1;
+
     const float tn = tau * pow2f(-damp * (float)k);
     const float r = expNegSmall(1.f / (tn * kFs));
 
@@ -136,6 +145,8 @@ void updateCoefficients() {
     s.b0[k] = 0.5f * (1.f - r * r) / (1.f + 0.5f * (float)k);
   }
 
+  s.active_modes = active;
+
   // A stiff mallet on a string is brighter than a soft one on a plate.
   const float exc_fc = 700.f * pow2f(1.6f * (3.f - g));
   s.exc_coef = 1.f - expNegSmall(6.2831853f * clipminmaxf(200.f, exc_fc, 12000.f) / kFs);
@@ -143,25 +154,32 @@ void updateCoefficients() {
 }
 
 void processChannel(const float *xn, float *yn, uint32_t frames, Channel &c) {
+  const int modes = s.active_modes;
+  const float *const b0 = s.b0;
+  const float *const a1 = s.a1;
+  const float *const a2 = s.a2;
+  const float exc_coef = s.exc_coef;
+  const float out_gain = s.out_gain;
+
   for (uint32_t i = 0; i < frames; ++i) {
     const float raw = xn[i];
 
     // Remove rumble, then shape the exciter.
     c.hp_y = 0.995f * (c.hp_y + raw - c.hp_x);
     c.hp_x = raw;
-    c.lp += (c.hp_y - c.lp) * s.exc_coef;
+    c.lp += (c.hp_y - c.lp) * exc_coef;
 
     const float exc = c.lp;
     float acc = 0.f;
 
-    for (int n = 0; n < kModes; ++n) {
-      const float y = s.b0[n] * exc + s.a1[n] * c.y1[n] + s.a2[n] * c.y2[n];
+    for (int n = 0; n < modes; ++n) {
+      const float y = b0[n] * exc + a1[n] * c.y1[n] + a2[n] * c.y2[n];
       c.y2[n] = c.y1[n];
       c.y1[n] = y;
       acc += y;
     }
 
-    yn[i] = fx_softclipf(0.15f, acc * s.out_gain);
+    yn[i] = fx_softclipf(0.15f, acc * out_gain);
   }
 }
 
