@@ -3,6 +3,18 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## bowed — 1.2-0
+
+- The Bow parameter works. It and the A knob are the same control on two pages,
+  and the old bookkeeping let A's value cancel whatever Bow had just set: a
+  sweep of the knob was flat within 2 dB and not even monotonic. Both now write
+  one pressure, and the LFO offsets that one value, so the knob has an 18 dB
+  range from a whisper to a growl.
+- A note starts from the first period of the delay line instead of seeding all
+  1024 samples, which nothing reads before the loop has written them. Note-on is
+  0.4 us per voice where it was 1.7; the excitation is noise either way, so the
+  sound is one more of the same.
+
 ## bowed — 1.1-0
 
 - The body's resonator coefficients are computed when the model changes instead

@@ -18,6 +18,7 @@
 namespace {
 
 constexpr int kVoices = 4;
+constexpr int kModelCount = 5;
 constexpr int kMaxPeriod = 1024;      // 47 Hz at 48 kHz
 constexpr float kFs = 48000.f;
 constexpr float kPi = 3.14159265358979f;
@@ -37,7 +38,7 @@ struct Model {
   float even;      // how much of the octave sits in the excitation
 };
 
-const Model kModels[5] = {
+const Model kModels[kModelCount] = {
     // loss   damp  body_hz  body_q  mix    rosin  even
     {0.9993f, 0.55f, 460.f, 2.0f, 0.55f, 0.55f, 0.15f},   // string
     {0.9997f, 0.72f, 1250.f, 3.4f, 0.40f, 0.35f, 0.05f},  // metal
@@ -58,7 +59,6 @@ struct Voice {
   float env;        // bow pressure, 0..1
   float env_coef;   // how fast it comes and goes
   bool  held;
-  float f0;
   int   bow_pos;   // where the bow is along its own cycle
 };
 
@@ -66,15 +66,15 @@ struct State {
   Voice voice[kVoices];
   int   next;       // round robin
   int   model;
-  float pressure;   // 0..1, the bow
+  float pressure;   // 0..1, the bow, as the loop sees it
+  float pressure_base;  // the knob, before the LFO reaches it
   float rosin;      // 0..1
   float bright;     // 0..1
   float level;
   float attack;     // 0..1, how long the bow takes to catch
   float tune;
   float noise;      // the bow's own noise, one state
-  float shape_base, lfo;
-  float shape_eff;
+  float lfo;
 
   // The body's two resonators, as coefficients. They only depend on the model,
   // so they are computed when the model changes; the audio loop must not call
@@ -97,24 +97,22 @@ inline float bowNoise() {
 void updateBody() {
   const Model &m = kModels[s.model];
 
-  float sn, cs;
-
+  // Both resonators are below a kilohertz in every model, so neither angle needs
+  // the clamp the first version carried, and the second is just 2.7 times the
+  // first.
   const float r1 = 0.995f - 0.02f * (1.f - m.body_q * 0.2f);
-  const float w1 = 2.f * kPi * clipminmaxf(40.f, m.body_hz, 0.45f * kFs) / kFs;
-  arc_sincos(w1, sn, cs);
-  s.b1_a1 = 2.f * r1 * cs;
+  const float w1 = 2.f * kPi * m.body_hz / kFs;
+  s.b1_a1 = 2.f * r1 * arc_cosf(w1);
   s.b1_a2 = -r1 * r1;
 
   const float r2 = 0.993f;
-  const float w2 = clipminmaxf(0.f, 2.f * kPi * m.body_hz * 2.7f / kFs, 2.8f);
-  arc_sincos(w2, sn, cs);
-  s.b2_a1 = 2.f * r2 * cs;
+  s.b2_a1 = 2.f * r2 * arc_cosf(2.7f * w1);
   s.b2_a2 = -r2 * r2;
 }
 
-void clearVoice(Voice &v) {
-  for (int i = 0; i < kMaxPeriod; ++i)
-    v.buf[i] = 0.f;
+// Everything but the delay line: the line is written whole by strike(), so
+// zeroing it here as well meant two passes over 4 KB per note.
+void resetVoice(Voice &v) {
   v.lp = 0.f;
   v.dc = 0.f;
   v.body1_y1 = v.body1_y2 = 0.f;
@@ -143,19 +141,16 @@ inline float loopRead(const Voice &v) {
   int p = v.pos - v.len;
   if (p < 0)
     p += kMaxPeriod;
-  int q = p - 1;
-  if (q < 0)
-    q += kMaxPeriod;
+  const int q = p ? p - 1 : kMaxPeriod - 1;
   return v.buf[p] + (v.buf[q] - v.buf[p]) * v.frac;
 }
 
 void strike(int note, float fine) {
   Voice &v = s.voice[s.next];
   s.next = (s.next + 1) % kVoices;
-  clearVoice(v);
+  resetVoice(v);
   const float n = (float)note + fine + s.tune;
-  v.f0 = 440.f * arc_pow2f((n - 69.f) * (1.f / 12.f));
-  setPeriod(v, v.f0);
+  setPeriod(v, 440.f * arc_pow2f((n - 69.f) * (1.f / 12.f)));
   v.held = true;
   // The bow does not catch the string instantly: at a low pressure it takes
   // longer, which is most of what a slow bow attack sounds like.
@@ -163,7 +158,11 @@ void strike(int note, float fine) {
   v.env_coef = 1.f - arc_pow2f(-1.f / (t * kFs) * 6.9f);
   v.env = 0.f;
   // A little something in the loop to start it, or a silent loop stays silent.
-  for (int i = 0; i < kMaxPeriod; ++i)
+  // Only the first period has to hold it: sample i reads the slot written at
+  // i - len, so the len + 1 slots at the end of the ring are the only ones read
+  // before the loop has written them. Seeding all 1024 was five to twenty times
+  // the work for a line whose head is overwritten before anything looks at it.
+  for (int i = kMaxPeriod - 1 - v.len; i < kMaxPeriod; ++i)
     v.buf[i] = 0.002f * bowNoise();
 }
 
@@ -181,12 +180,11 @@ void OSC_INIT(uint32_t platform, uint32_t api) {
   s.attack = 0.35f;
   s.tune = 0.f;
   s.noise = 0.f;
-  s.shape_base = 0.55f;
-  s.shape_eff = 0.55f;
+  s.pressure_base = 0.55f;
   s.lfo = 0.f;
   updateBody();
   for (int i = 0; i < kVoices; ++i)
-    clearVoice(s.voice[i]);
+    resetVoice(s.voice[i]);
 }
 
 void OSC_CYCLE(const user_osc_param_t *const params, int32_t *yn,
@@ -194,11 +192,11 @@ void OSC_CYCLE(const user_osc_param_t *const params, int32_t *yn,
   // The synth's LFO arrives as an offset on the shape parameter, which here is
   // the bow pressure: the note leans into the string and lets go.
   s.lfo += (q31_to_f32(params->shape_lfo) - s.lfo) * 0.10f;
-  const float sh = clipminmaxf(0.f, s.shape_base + 0.4f * s.lfo, 1.f);
-  if (fabsf(sh - s.shape_eff) > 0.0015f) {
-    s.shape_eff = sh;
-    s.pressure = sh;
-  }
+  // One pressure, one place: the knob (A, or the Bow parameter — they are the
+  // same control on two pages) plus what the LFO is doing to it. The old version
+  // kept the knob's value, the smoothed value and the applied value apart, which
+  // let a Bow move be cancelled by the next LFO update.
+  s.pressure = clipminmaxf(0.f, s.pressure_base + 0.4f * s.lfo, 1.f);
 
   const Model &m = kModels[s.model];
   const float loop_gain = m.loss * (0.99985f + 0.00015f * s.pressure);
@@ -265,7 +263,7 @@ void OSC_CYCLE(const user_osc_param_t *const params, int32_t *yn,
       mix += in * (1.f - m.body_mix) + (y1 + y2) * m.body_mix;
     }
 
-    mix *= s.level * 0.25f;
+    mix *= s.level * (1.f / (float)kVoices);
     y[i] = f32_to_q31(clipminmaxf(-1.f, osc_softclipf(0.18f, mix), 1.f));
   }
 }
@@ -276,6 +274,9 @@ void OSC_NOTEON(const user_osc_param_t *const params) {
   strike(note, fine);
 }
 
+// The oscillator API says which note was released, but the first version of this
+// unit never kept the pitch of a voice, so any release lets the whole chord go.
+// That is the one thing about four voices that a single bowed note cannot show.
 void OSC_NOTEOFF(const user_osc_param_t *const params) {
   (void)params;
   for (int i = 0; i < kVoices; ++i)
@@ -285,15 +286,14 @@ void OSC_NOTEOFF(const user_osc_param_t *const params) {
 void OSC_MUTE(const user_osc_param_t *const params) {
   (void)params;
   for (int i = 0; i < kVoices; ++i)
-    clearVoice(s.voice[i]);
+    resetVoice(s.voice[i]);
 }
 
 void OSC_PARAM(uint16_t index, uint16_t value) {
   switch (index) {
   case k_user_osc_param_shape:
-    s.shape_base = param_val_to_f32(value);
-    s.shape_eff = clipminmaxf(0.f, s.shape_base + 0.4f * s.lfo, 1.f);
-    s.pressure = s.shape_eff;
+    s.pressure_base = param_val_to_f32(value);
+    s.pressure = clipminmaxf(0.f, s.pressure_base + 0.4f * s.lfo, 1.f);
     break;
 
   case k_user_osc_param_shiftshape:
@@ -302,10 +302,8 @@ void OSC_PARAM(uint16_t index, uint16_t value) {
 
   case k_user_osc_param_id1: {
     int model = (int)value;
-    if (model < 0)
-      model = 0;
-    if (model > 4)
-      model = 4;
+    if (model >= kModelCount)
+      model = kModelCount - 1;
     if (model != s.model) {
       s.model = model;
       updateBody();
@@ -314,9 +312,8 @@ void OSC_PARAM(uint16_t index, uint16_t value) {
   }
 
   case k_user_osc_param_id2:  // bow pressure, 0 .. 100
-    s.pressure = clipminmaxf(0.f, (float)value * 0.01f, 1.f);
-    if (s.lfo == 0.f)
-      s.shape_eff = s.pressure;
+    s.pressure_base = clipminmaxf(0.f, (float)value * 0.01f, 1.f);
+    s.pressure = clipminmaxf(0.f, s.pressure_base + 0.4f * s.lfo, 1.f);
     break;
 
   case k_user_osc_param_id3:  // rosin, 0 .. 100

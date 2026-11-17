@@ -39,3 +39,10 @@ inline void arc_sincos(float w, float &s, float &c) {
   c = 1.f + w2 * (-5e-1f + w2 * (4.16666667e-2f + w2 * (-1.38888889e-3f +
       w2 * 2.48015873e-5f)));
 }
+
+// The cosine alone, for the places where only that is wanted.
+inline float arc_cosf(float w) {
+  float s, c;
+  arc_sincos(w, s, c);
+  return c;
+}

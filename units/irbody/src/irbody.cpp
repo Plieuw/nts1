@@ -65,11 +65,15 @@ constexpr float kStereoTrim = 0.72f;  // see engineSample
 
 // The old unit normalised every response to a peak of 0.5 and convolved with it.
 // A mode of amplitude A and damping 1 - r has a resonant gain of A / (2 (1 - r))
-// in that response, which is what these two constants put back: the bank is
-// scaled to the same resonant gain, so a violin still emphasises the notes a
-// violin emphasises by the same amount.
-constexpr float kBankScale = 1.f;
-constexpr float kTailScale = 1.f;
+// in that response, which is what the mode gain in buildEngine puts back, so a
+// violin still emphasises the notes a violin emphasises by the same amount.
+//
+// The four allpasses' feedback, named so the blocks below read as one shape:
+// the three that smear the tail, the long one on the side signal, and the short
+// one that turns the right channel's modes a little.
+constexpr float kApG = 0.6f;
+constexpr float kApG3 = 0.72f;
+constexpr float kApG4 = 0.4f;
 
 // The .sdram section is not zeroed at load time, so every buffer is cleared
 // explicitly before it is used.
@@ -110,12 +114,10 @@ struct Engine {
   float comb_lp[kCombs];
   float comb_fb_out[kCombs];
   float tail_gain;
-  float bank_scale;
 
   // Diffusion of the tail.
   int ap0_pos;
   int ap1_pos;
-  float ap_g;
 
   // The model's tail is a low band plus a high band that dies away faster; the
   // split is a one pole at 450 Hz on the way in.
@@ -140,8 +142,7 @@ struct State {
   int active;   // engine slot in the output
   int target;   // engine slot fading in, -1 when not fading
   float pos;    // where the body knob sits, 0 .. presets-1, continuous
-  float queued; // last request that arrived during a fade
-  int has_queued;
+  float queued; // last request that arrived during a fade, -1 when none
   float damp_lp_r;
   float fade;   // 0..1, position of the crossfade
   float damp;   // 0..1
@@ -254,8 +255,11 @@ void buildEngine(int slot, float pos) {
                                 : gt + (trimB.tail - gt) * (2.f * t - 1.f)};
   const float size = kSize[a] + (kSize[b] - kSize[a]) * t;
   const float level = powf(10.f, (kLevelDb[a] + (kLevelDb[b] - kLevelDb[a]) * t) / 20.f);
-  const float bright = irmodel::kPresets[a].bright +
-                       (irmodel::kPresets[b].bright - irmodel::kPresets[a].bright) * t;
+  // Both bodies' brightness, not the nearest one's: the mode set jumps at the
+  // half step, but brightness is a number and glides the whole way.
+  const irmodel::Preset &pa = irmodel::kPresets[a];
+  const irmodel::Preset &pb = irmodel::kPresets[b];
+  const float bright = pa.bright + (pb.bright - pa.bright) * t;
   Engine &e = g_eng[slot];
   clearBuffers(slot);
   clearEngine(e);
@@ -289,32 +293,35 @@ void buildEngine(int slot, float pos) {
     // and a resonator driven at its own frequency settles at exactly that for a
     // gain of A sin w / 2. This is that gain, so the mode lands where the
     // convolution put it.
-    e.mode_gain[k] = 0.5f * m.amp * sw * kBankScale * trim.bank;
+    e.mode_gain[k] = 0.5f * m.amp * sw * trim.bank;
   }
 
   // Diffuse tail. The feedback is what the response's decay calls for over the
   // line's own length: a delay line of D samples with feedback g dies with a
   // time constant of -D / ln(g), so g = exp(-D / tau) gives the model's tau.
-  const float *delays = kBodyDelays;
   const float tauA = (irmodel::kPresets[a].noise_tau > 0.0005f) ? irmodel::kPresets[a].noise_tau : 0.0005f;
   const float tauB = (irmodel::kPresets[b].noise_tau > 0.0005f) ? irmodel::kPresets[b].noise_tau : 0.0005f;
   const float tau = tauA + (tauB - tauA) * t;
   for (int c = 0; c < kCombs; ++c) {
-    int len = (int)(delays[c] * kFs * size);
+    int len = (int)(kBodyDelays[c] * kFs * size);
     if (len > kCombMax)
       len = kCombMax;
     if (len < 16)
       len = 16;
     e.comb_len[c] = len;
     e.comb_fb[c] = clipminmaxf(0.f, arc_expneg((float)len / (tau * kFs)), 0.93f);
-
-    // Brightness is how long the high band lives compared with the low one; in
-    // the loop that is a one pole that takes a little more away each pass.
+  }
+  // Brightness is how long the high band lives compared with the low one; in the
+  // loop that is a one pole that takes a little more away each pass, and the same
+  // one for all four lines.
+  {
     const float fc = clipminmaxf(400.f, 500.f + 3500.f * bright, 0.45f * kFs);
-    e.comb_damp[c] = 1.f - arc_expneg(2.f * kPi * fc / kFs);
+    const float damp = 1.f - arc_expneg(2.f * kPi * fc / kFs);
+    for (int c = 0; c < kCombs; ++c)
+      e.comb_damp[c] = damp;
   }
   const float noiseA = irmodel::kPresets[a].noise, noiseB = irmodel::kPresets[b].noise;
-  e.tail_gain = (noiseA + (noiseB - noiseA) * t) * kTailScale * trim.tail;
+  e.tail_gain = (noiseA + (noiseB - noiseA) * t) * trim.tail;
 
   // The model's tail is a low band with a high band on top, and the high band is
   // the one that dies first: the split on the way in and the one pole at the end
@@ -324,9 +331,7 @@ void buildEngine(int slot, float pos) {
   const float tail_lp = 900.f + 2600.f * bright;
   e.tail_out_cut = 1.f - arc_expneg(2.f * kPi * tail_lp / kFs);
 
-  e.ap_g = 0.6f;
   e.level = level;
-  e.bank_scale = kBankScale;
 }
 
 /*---------------------------------------------------------------------------*
@@ -348,7 +353,6 @@ __attribute__((noinline)) void engineSample(int slot, Engine &e, float x,
     e.y1[k] = y;
     bank += e.mode_gain[k] * y;
   }
-  bank *= e.bank_scale;
 
   // Tail: four damped combs in parallel, then two allpasses to smear them.
   e.tail_lp_in += (x - e.tail_lp_in) * e.tail_cut;
@@ -383,8 +387,8 @@ __attribute__((noinline)) void engineSample(int slot, Engine &e, float x,
   {
     float *buf = g_ap0[slot];
     const float d = buf[e.ap0_pos];
-    const float y = d - e.ap_g * tail;
-    buf[e.ap0_pos] = tail + e.ap_g * y;
+    const float y = d - kApG * tail;
+    buf[e.ap0_pos] = tail + kApG * y;
     if (++e.ap0_pos >= kAp0Len)
       e.ap0_pos = 0;
     tail = y;
@@ -392,8 +396,8 @@ __attribute__((noinline)) void engineSample(int slot, Engine &e, float x,
   {
     float *buf = g_ap1[slot];
     const float d = buf[e.ap1_pos];
-    const float y = d - e.ap_g * tail;
-    buf[e.ap1_pos] = tail + e.ap_g * y;
+    const float y = d - kApG * tail;
+    buf[e.ap1_pos] = tail + kApG * y;
     if (++e.ap1_pos >= kAp1Len)
       e.ap1_pos = 0;
     tail = y;
@@ -402,8 +406,8 @@ __attribute__((noinline)) void engineSample(int slot, Engine &e, float x,
   {
     float *buf = g_ap2[slot];
     const float d = buf[e.ap2_pos];
-    const float y = d - e.ap_g * side;
-    buf[e.ap2_pos] = side + e.ap_g * y;
+    const float y = d - kApG * side;
+    buf[e.ap2_pos] = side + kApG * y;
     if (++e.ap2_pos >= kAp1Len)
       e.ap2_pos = 0;
     side = y;
@@ -411,8 +415,8 @@ __attribute__((noinline)) void engineSample(int slot, Engine &e, float x,
   {
     float *buf = g_ap3[slot];
     const float d = buf[e.ap3_pos];
-    const float y = d - 0.72f * side;
-    buf[e.ap3_pos] = side + 0.72f * y;
+    const float y = d - kApG3 * side;
+    buf[e.ap3_pos] = side + kApG3 * y;
     if (++e.ap3_pos >= kAp3Len)
       e.ap3_pos = 0;
     side = y;
@@ -425,16 +429,17 @@ __attribute__((noinline)) void engineSample(int slot, Engine &e, float x,
   e.tail_out_lp_s += (side - e.tail_out_lp_s) * e.tail_out_cut;
 
   // Each channel carries the whole body, so both are trimmed to keep the pair
-  // from being louder than the mono unit used to be.
-  const float mid = kStereoTrim * bank;
+  // from being louder than the mono unit used to be, and the trim is taken once.
+  const float bank_trim = kStereoTrim * bank;
+  const float mid = bank_trim;
   const float t_m = kStereoTrim * e.tail_out_lp * e.tail_gain;
 
-  float bank_r = kStereoTrim * bank;
+  float bank_r = bank_trim;
   {
     float *buf = g_ap4[slot];
     const float d = buf[e.ap4_pos];
-    const float y = d - 0.4f * bank_r;
-    buf[e.ap4_pos] = bank_r + 0.4f * y;
+    const float y = d - kApG4 * bank_r;
+    buf[e.ap4_pos] = bank_r + kApG4 * y;
     if (++e.ap4_pos >= kAp4Len)
       e.ap4_pos = 0;
     // Only a little of the rotated copy: two points on a violin are not two
@@ -481,8 +486,7 @@ void REVFX_INIT(uint32_t platform, uint32_t api) {
   s.active = 0;
   s.target = -1;
   s.pos = 0.f;
-  s.queued = 0.f;
-  s.has_queued = 0;
+  s.queued = -1.f;
   s.fade = 0.f;
   s.damp = 0.7f;
   s.wet = 0.5f;
@@ -520,10 +524,9 @@ void REVFX_PROCESS(float *xn, uint32_t frames) {
         s.active = s.target;
         s.target = -1;
         s.fade = 0.f;
-        if (s.has_queued) {
-          const float p = s.queued;
-          s.has_queued = 0;
-          startFade(p);
+        if (s.queued >= 0.f) {
+          startFade(s.queued);
+          s.queued = -1.f;
         }
       }
     } else {
@@ -556,7 +559,6 @@ void REVFX_PARAM(uint8_t index, int32_t value) {
       // While a crossfade runs, remember only the latest request: the knob
       // sends a stream of values and we do not want a crossfade per value.
       s.queued = q;
-      s.has_queued = 1;
     } else {
       startFade(q);
     }
@@ -583,7 +585,7 @@ void REVFX_SUSPEND(void) {
   clearEngine(g_eng[0]);
   clearEngine(g_eng[1]);
   s.target = -1;
-  s.has_queued = 0;
+  s.queued = -1.f;
   s.fade = 0.f;
   s.damp_lp = 0.f;
   s.damp_lp_r = 0.f;
