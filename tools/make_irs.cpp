@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 
+#define IRMODEL_RENDER
 #include "../units/irbody/src/ir_model.h"
 
 namespace {
