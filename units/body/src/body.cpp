@@ -6,15 +6,14 @@
  *
  * Runs in the DELAY slot and convolves the incoming sound with a short impulse
  * response, so the synth sits inside a violin body, a piano soundboard, a metal
- * pipe or a small space instead of on its own. The responses are generated at
- * load time from a handful of damped modes plus a diffuse noise tail, which
- * keeps the unit free of sampled material while still giving true convolution
- * behaviour: every partial of the source is coloured the same way a real body
- * would colour it.
+ * plate or a small space instead of on its own. The responses are modelled in
+ * ir_model.h from resonances, a diffuse tail and early reflections; the same
+ * header writes them out as WAV files in ir/ through tools/make_irs.cpp.
  *
- * The convolution is partitioned in the frequency domain (8 x 256 taps, FFT
+ * The convolution is partitioned in the frequency domain (16 x 256 taps, FFT
  * size 512), which costs a fraction of what direct convolution of the same
- * 42.7 ms response would need.
+ * 85 ms response would need. Only the real halves of the spectra are kept out
+ * of the product sum, everything stays in SDRAM.
  *
  * A-knob (TIME)   which response: violin, cello, piano, guitar, wood, steel,
  *                 room, plate
@@ -24,35 +23,17 @@
 
 #include "userdelfx.h"
 
+#include "ir_model.h"
+
 namespace {
 
 constexpr float kFs = 48000.f;
-constexpr float kPi = 3.14159265358979f;
 
-constexpr int kFFT = 512;             // FFT size
-constexpr int kHop = 256;             // samples per block (5.3 ms latent)
-constexpr int kParts = 8;             // -> 2048 taps, 42.7 ms of response
-constexpr int kIrLen = kParts * kHop;
-
-struct Preset {
-  float f0;      // modal fundamental
-  float tau;     // decay time
-  float noise;   // amount of diffuse tail
-  float bright;  // brightness of the diffuse tail
-};
-
-const Preset kPresets[] = {
-    {260.f, 0.14f, 0.10f, 0.55f},  // violin body
-    {120.f, 0.20f, 0.08f, 0.45f},  // cello body
-    { 80.f, 0.30f, 0.12f, 0.40f},  // piano soundboard
-    { 98.f, 0.22f, 0.10f, 0.50f},  // acoustic guitar
-    {330.f, 0.07f, 0.18f, 0.62f},  // wood / marimba bar
-    {430.f, 0.45f, 0.22f, 0.78f},  // steel / pipe
-    {110.f, 0.35f, 1.00f, 0.35f},  // small room
-    {140.f, 0.55f, 1.00f, 0.68f},  // plate
-};
-
-constexpr int kPresetCount = (int)(sizeof(kPresets) / sizeof(kPresets[0]));
+constexpr int kFFT = 512;                     // FFT size
+constexpr int kHop = 256;                     // samples per block (5.3 ms latent)
+constexpr int kParts = 16;                    // -> 4096 taps, 85.3 ms
+constexpr int kIrLen = irmodel::kIrLen;
+constexpr int kPresetCount = irmodel::kPresetCount;
 
 // The .sdram section is not zeroed at load time, so everything here is cleared
 // explicitly in DELFX_INIT().
@@ -82,16 +63,6 @@ struct State {
 };
 
 State s;
-uint32_t g_rng;
-
-inline float rnd01() {
-  g_rng = g_rng * 1664525u + 1013904223u;
-  return (float)(g_rng >> 8) * (1.f / 16777216.f);
-}
-
-inline float rndbi() {
-  return rnd01() * 2.f - 1.f;
-}
 
 /*---------------------------------------------------------------------------*
  * FFT
@@ -143,66 +114,8 @@ void fft(float *re, float *im, bool inverse) {
 }
 
 /*---------------------------------------------------------------------------*
- * Response generation
+ * Convolution
  *---------------------------------------------------------------------------*/
-
-void buildIr(int preset) {
-  const Preset &p = kPresets[preset];
-
-  for (int i = 0; i < kIrLen; ++i)
-    g_ir[i] = 0.f;
-
-  g_rng = 0x2F6E2B1u + (uint32_t)preset * 7919u;
-
-  // Modal part: damped sinusoids, spread out and slightly irregular so the
-  // body has density instead of a handful of obvious resonances.
-  for (int k = 0; k < 14; ++k) {
-    const float jitter = 0.85f + 0.45f * rnd01();
-    const float f = p.f0 * (1.f + 1.85f * (float)k * jitter);
-    if (f > 0.45f * kFs)
-      break;
-
-    const float amp = 0.8f * expf(-0.32f * (float)k) * (0.6f + 0.5f * rnd01());
-    const float tau = p.tau * expf(-0.30f * (float)k);
-    const float r = expf(-1.f / (tau * kFs));
-    const float w = 2.f * kPi * f / kFs;
-    const float c = 2.f * r * cosf(w);
-    const float r2 = r * r;
-
-    float y0 = 0.f;
-    float y1 = amp * sinf(w);
-    for (int n = 0; n < kIrLen; ++n) {
-      g_ir[n] += y1;
-      const float y2 = c * y1 - r2 * y0;
-      y0 = y1;
-      y1 = y2;
-    }
-  }
-
-  // Diffuse part: a decaying, filtered noise tail plus a few early reflections.
-  if (p.noise > 0.f) {
-    const float a = clipminmaxf(0.02f, p.bright * 0.9f, 0.99f);
-    float lp = 0.f;
-    for (int n = 0; n < kIrLen; ++n) {
-      lp += (rndbi() - lp) * a;
-      g_ir[n] += lp * expf(-(float)n / (p.tau * kFs)) * p.noise * 0.6f;
-    }
-
-    for (int r = 0; r < 8; ++r) {
-      const int d = 24 + (int)(rnd01() * 0.012f * kFs);
-      if (d < kIrLen)
-        g_ir[d] += rndbi() * 0.5f * expf(-0.35f * (float)r);
-    }
-  }
-
-  float peak = 1e-6f;
-  for (int i = 0; i < kIrLen; ++i)
-    peak = fmaxf(peak, fabsf(g_ir[i]));
-
-  const float sc = 0.5f / peak;
-  for (int i = 0; i < kIrLen; ++i)
-    g_ir[i] *= sc;
-}
 
 void computePartitions() {
   for (int p = 0; p < kParts; ++p) {
@@ -222,13 +135,9 @@ void computePartitions() {
   }
 }
 
-/*---------------------------------------------------------------------------*
- * Convolution block
- *---------------------------------------------------------------------------*/
-
 void runBlock() {
   if (s.need_ir) {
-    buildIr(s.preset);
+    irmodel::render(g_ir, s.preset);
     computePartitions();
     s.need_ir = false;
   }
@@ -273,7 +182,8 @@ void runBlock() {
 
 void updateDamping() {
   const float fc = 1200.f * expf(2.71f * s.damp);  // 1.2 kHz .. 18 kHz
-  s.damp_coef = 1.f - expf(-2.f * kPi * clipminmaxf(200.f, fc, 0.45f * kFs) / kFs);
+  s.damp_coef = 1.f - expf(-2.f * 3.14159265358979f *
+                           clipminmaxf(200.f, fc, 0.45f * kFs) / kFs);
 }
 
 void clearBuffers() {
@@ -311,7 +221,7 @@ void DELFX_INIT(uint32_t platform, uint32_t api) {
   (void)api;
 
   for (int i = 0; i < kFFT / 2; ++i) {
-    const float a = 2.f * kPi * (float)i / (float)kFFT;
+    const float a = 2.f * 3.14159265358979f * (float)i / (float)kFFT;
     g_twre[i] = cosf(a);
     g_twim[i] = -sinf(a);
   }
@@ -323,7 +233,7 @@ void DELFX_INIT(uint32_t platform, uint32_t api) {
 
   updateDamping();
   clearBuffers();
-  buildIr(s.preset);
+  irmodel::render(g_ir, s.preset);
   computePartitions();
 }
 
@@ -359,7 +269,8 @@ void DELFX_PARAM(uint8_t index, int32_t value) {
   switch (index) {
   case k_user_delfx_param_time: {
     const int sel = (int)clipminmaxf(
-        0.f, (float)value * (1.f / 1023.f) * (float)kPresetCount, (float)(kPresetCount - 1));
+        0.f, (float)value * (1.f / 1023.f) * (float)kPresetCount,
+        (float)(kPresetCount - 1));
     if (sel != s.preset) {
       s.preset = sel;
       s.need_ir = true;

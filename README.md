@@ -11,7 +11,7 @@ endless barberpole phaser.
 | `lpg` | MOD | Vactrol style low pass gate driven by an envelope follower | `lpg.ntkdigunit` |
 | `reso` | MOD | Twelve mode resonator with beating pairs, Rings in spirit | `reso.ntkdigunit` |
 | `barber` | DELAY | Barberpole phaser that rises or falls forever | `barber.ntkdigunit` |
-| `irbody` | DELAY | Convolution with generated instrument bodies and spaces | `irbody.ntkdigunit` |
+| `irbody` | DELAY | Convolution with modelled instrument bodies and spaces | `irbody.ntkdigunit` |
 
 The NTS-1 has one slot per type, so `lpg` and `reso` are alternatives, as are
 `barber` and `irbody`. Loading them all is fine; you pick per slot.
@@ -35,12 +35,19 @@ Noise is the sound source everything else in this collection likes to chew on.
 | Edit 3 | `Keytrk`: how much the algorithm follows the played note |
 | Edit 4 | `Grain`: grain length for the impulse based algorithms |
 | Edit 5 | `Level` |
+| Edit 6 | `Trans`: noise transient on every note-on |
 
 What the A-knob does depends on the algorithm: velvet sets the impulse density,
 crackle the event rate, step the sample & hold rate as a multiple of the note,
 tuned the resonance of the tracking band-pass, and hybrid mixes the band-pass
 with a sine at the same pitch. White, pink and brown stay close to their usual
 character — the tilt is on the B-knob.
+
+`Trans` adds a short noise transient to every note-on: full band noise that is
+shaped by the same tilt, decaying in about ten milliseconds. It gives the noise
+a percussive, struck attack instead of a fade-in, and it is most obvious with a
+fast amp EG on the NTS-1. Velvet and crackle already produce transients at grain
+level, so turn `Trans` down when you use those for a dry, dusty sound.
 
 ### lpg — modulation effect (low pass gate)
 
@@ -83,10 +90,21 @@ the notches into the classic jet sound.
 ### irbody — delay effect (impulse response / body)
 
 Convolves the incoming sound with an impulse response, so the synth sits inside
-a violin body, a piano soundboard, a metal pipe or a small space. The responses
-are generated at load time from damped modes plus a diffuse tail, so the unit
-carries no sampled material, but it is true convolution: every partial of the
-source is coloured the way a real body would colour it.
+a violin body, a piano soundboard, a metal plate or a small space. The responses
+are modelled rather than sampled, but they are true impulse responses and the
+unit convolves with them sample by sample: every partial of the source is
+coloured the way a real body would colour it.
+
+The models are physical: the violin, cello and guitar responses use the air and
+wood resonances of the real instruments (A0, B1-, B1+ and the bridge hill), the
+wood preset the free-free bar series of a marimba bar, the steel preset a
+plate-like inharmonic series with an even, long decay. On top of the modes each
+response has a short broadband knock, a diffuse tail whose high frequencies die
+away faster than its low ones, and — for the spaces — early reflections. The
+same responses are written out as WAV files in [`ir/`](ir) by
+[`tools/make_irs.cpp`](tools/make_irs.cpp), so you can look at them, drop them
+in a DAW, or convolve something else with them; they are bit for bit what the
+unit uses.
 
 | Control | Function |
 | --- | --- |
@@ -94,10 +112,11 @@ source is coloured the way a real body would colour it.
 | B (DEPTH) | damping of the wet signal, dark .. open |
 | DEL + B | dry/wet |
 
-The convolution runs in eight frequency domain partitions (FFT 512, hop 256), so
-a 42.7 ms response costs a fraction of what direct convolution would need. Block
-processing adds 5.3 ms of latency, which the dry path is delayed by as well so
-the two stay aligned.
+The convolution runs in sixteen frequency domain partitions (FFT 512, hop 256),
+so an 85 ms response costs a fraction of what direct convolution would need.
+Block processing adds 5.3 ms of latency, which the dry path is delayed by as
+well so the two stay aligned. Responses end with a short fade, so the cut at
+85 ms is not audible.
 
 ## Installing on the NTS-1
 
@@ -116,6 +135,13 @@ slot. Custom units need NTS-1 firmware **1.02 or newer**.
 ./scripts/build.sh                # everything -> dist/
 ./scripts/build.sh noise lpg      # just these
 ./scripts/build.sh --setup        # only fetch the SDK and toolchain
+```
+
+Regenerating the impulse response WAV files (not needed to build, only when you
+change the models in `units/body/src/ir_model.h`):
+
+```sh
+g++ -O2 tools/make_irs.cpp -o /tmp/make_irs && /tmp/make_irs ir
 ```
 
 The script clones the logue SDK into `.sdk/` and downloads the gcc 5.4 toolchain
@@ -151,7 +177,9 @@ so your units cannot collide with someone else's.
 * A modfx unit only gets the two knobs (`TIME`, `DEPTH`); the NTS-1 does not
   hand modulation effects any more parameters, which is why `lpg` and `reso`
   have no extra edit page.
-* `irbody` is mono in the wet path, so the tail is centred.
+* `irbody` is mono in the wet path, so the tail is centred, and its responses
+  are capped at 85 ms because that is what fits in the partitioned convolution.
+  Longer spaces need the stock reverb after it.
 * The mkI gives a modfx unit 6 KB of SRAM and a delfx unit 12 KB of code space
   plus 2.4 MB of SDRAM; all units stay well inside those budgets.
 

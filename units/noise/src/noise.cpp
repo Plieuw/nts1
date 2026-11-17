@@ -10,6 +10,7 @@
  * Edit 3   Keytrk       how much the algorithms follow the played note
  * Edit 4   Grain        length of the grains (velvet, crackle, step smoothing)
  * Edit 5   Level        output level
+ * Edit 6   Trans        noise transient on every note-on, for a percussive attack
  *
  * Per-algorithm character (A-knob):
  *   white    nothing to shape, kept as reference noise
@@ -54,6 +55,7 @@ struct State {
   float level;   // 0..1
   float shape;   // A knob, 0..1
   float shift;   // B knob, 0..1
+  float trans;   // 0..1, note-on transient amount
 
   // Derived from the user parameters.
   float velvet_density;  // impulses per sample
@@ -64,6 +66,7 @@ struct State {
   float sh_ratio;        // sample & hold rate, as a multiple of the note
   float hybrid_mix;      // band-pass <-> sine
   float velvet_gain;     // compensates the impulse density
+  float trans_coef;      // decay of the note-on transient
 
   // Runtime state.
   uint32_t rng;
@@ -82,6 +85,7 @@ struct State {
   float dc_x;
   float dc_y;
   float phi;
+  float trans_env;  // note-on transient envelope
   float w0;      // phase increment per sample of the played note
   float freq;    // in Hz
 };
@@ -123,6 +127,7 @@ void resetRuntime() {
   s.dc_x = 0.f;
   s.dc_y = 0.f;
   s.phi = rand01();
+  s.trans_env = 0.f;
 }
 
 void updateDerived() {
@@ -150,6 +155,10 @@ void updateDerived() {
   // the compensation follows both the density and the smoothing.
   s.velvet_gain = clipminmaxf(
       0.5f, 1.15f / sqrtf(s.velvet_density * s.grain_lp * 0.5f), 600.f);
+
+  // A struck source: full band, gone within ten milliseconds or so. A little
+  // longer than a click, short enough to read as an attack and not as a tone.
+  s.trans_coef = expf(-1.f / (0.011f * (float)k_samplerate));
 }
 
 // Pitch and band-pass coefficients are refreshed once per buffer.
@@ -259,6 +268,7 @@ void OSC_INIT(uint32_t platform, uint32_t api) {
   s.level = 0.8f;
   s.shape = 0.5f;
   s.shift = 0.5f;
+  s.trans = 0.35f;
 
   s.rng = 0x9E3779B9u ^ osc_mcu_hash();
   if (s.rng == 0u)
@@ -314,6 +324,13 @@ void OSC_CYCLE(const user_osc_param_t *const params, int32_t *yn,
 
     x *= kAlgoGain[s.algo];
 
+    // Note-on transient: a short burst of the same broadband noise, so it is
+    // shaped by the tilt and the rest of the unit just like the main signal.
+    if (s.trans_env > 1e-4f) {
+      x += s.trans_env * s.trans * 2.2f * osc_white();
+      s.trans_env *= s.trans_coef;
+    }
+
     // Spectral tilt: crossfade between the low and the high part of the signal.
     s.tilt_lp += (x - s.tilt_lp) * tilt_coef;
     const float lo = s.tilt_lp;
@@ -332,6 +349,7 @@ void OSC_CYCLE(const user_osc_param_t *const params, int32_t *yn,
 void OSC_NOTEON(const user_osc_param_t *const params) {
   (void)params;
   resetRuntime();
+  s.trans_env = 1.f;
 }
 
 void OSC_NOTEOFF(const user_osc_param_t *const params) {
@@ -376,6 +394,10 @@ void OSC_PARAM(uint16_t index, uint16_t value) {
 
   case k_user_osc_param_id5:
     s.level = clipminmaxf(0.f, (float)value * 0.01f, 1.f);
+    break;
+
+  case k_user_osc_param_id6:
+    s.trans = clipminmaxf(0.f, (float)value * 0.01f, 1.f);
     break;
 
   default:
