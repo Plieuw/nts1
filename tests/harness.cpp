@@ -330,6 +330,36 @@ int main(int argc, char **argv) {
     printf("fuzznan %d\n", nan);
   }
 
+#if UNITKIND == 2
+  // The notch count is the one control a third-octave band cannot see: an
+  // all-pass cascade moves phase, not band energy. With the sweep stopped the
+  // difference between one notch and eight is in the signal itself, and that is
+  // what this reports, against the signal itself.
+  {
+    static float one[kSamples];
+    const int shift = k_user_delfx_param_shift_depth;
+    unitInit();
+    setNominal();
+    unitParam(0, (gLo[0] + gHi[0]) / 2);  // rate zero: the notches stand still
+    unitParam(shift, gLo[shift]);
+    unitNote(60);
+    renderInto(one, kSamples);
+    unitInit();
+    setNominal();
+    unitParam(0, (gLo[0] + gHi[0]) / 2);
+    unitParam(shift, gHi[shift]);
+    unitNote(60);
+    renderInto(gOut, kSamples);
+    double d = 0.0, e = 0.0;
+    for (int i = (int)(0.05 * kRate); i < (int)(1.0 * kRate); ++i) {
+      const double v = (double)gOut[i] - one[i];
+      d += v * v;
+      e += (double)one[i] * one[i];
+    }
+    printf("notch_db %.1f\n", 10.0 * log10((d + 1e-30) / (e + 1e-30)));
+  }
+#endif
+
 #if UNITKIND == 0
   // What a released key leaves behind: half a second with the key down, then
   // half a second with it up, both at the nominal settings. The amp EG of the

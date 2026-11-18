@@ -31,7 +31,9 @@ for u in noise resonator bowed lpg reso elements barber irbody; do
 import json
 module = json.load(open('units/$u/manifest.json'))['header']['module']
 n = len(json.load(open('units/$u/manifest.json'))['header']['params'])
-print(8 if module == 'osc' else (n if n else 2))")
+# A delay unit on the mkI has time, depth and shift-depth (index 3), so it is
+# swept with four: the reserved one in between does nothing.
+print(8 if module == 'osc' else (n if n else (4 if module == 'delfx' else 2)))")
   RANGES=$(python3 -c "
 import json
 p = json.load(open('units/$u/manifest.json'))['header']['params']

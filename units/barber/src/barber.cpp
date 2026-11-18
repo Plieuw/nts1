@@ -3,16 +3,22 @@
  *
  * BSD 3-Clause License, see LICENSE.
  *
- * A sweeps through a cascade of eight all-pass sections, and where a single
- * sweep would run out of spectrum and jump back, a second cascade a half cycle
- * out of phase takes over. The two cascades are crossfaded with a raised cosine
+ * A sweeps through a cascade of one to eight all-pass sections, one notch per
+ * section, and where a single sweep would run out of spectrum and jump back, a
+ * second cascade a half cycle out of phase takes over. The two cascades are crossfaded with a raised cosine
  * so the jump is never heard, which gives the endless rise (or fall) of a
  * barberpole. Feedback sharpens the notches into the classic jet sound.
  *
  * A-knob (TIME)   rate and direction: left of centre falls, right of centre
  *                 rises, further from centre is faster (0.02 .. 10 Hz)
  * B-knob (DEPTH)  feedback / resonance of the phaser
- * DEL + B knob    dry/wet mix
+ * DEL + B knob    number of notches, one to eight
+ *
+ * The dry/wet mix sits at the middle, where the notches are deepest: with the
+ * whole cascade on the wet side they are a phase sweep and nothing else, and at
+ * zero there is no phaser at all. The notch count was the thing missing from the
+ * three controls this slot has, so it took the shifted DEPTH control and the mix
+ * became the fixed one.
  */
 
 #include "userdelfx.h"
@@ -21,6 +27,9 @@ namespace {
 
 constexpr int kStages = 8;
 constexpr float kFs = 48000.f;
+// Dry/wet at the middle: the mix that makes the notches deepest. Fixed, because
+// the shifted DEPTH control is needed for the notch count instead.
+constexpr float kMix = 0.5f;
 constexpr float kPi = 3.14159265358979f;
 
 struct Stage {
@@ -37,7 +46,7 @@ struct Channel {
 struct State {
   float time;   // 0..1
   float depth;  // 0..1
-  float wet;    // 0..1
+  int stages;   // notches, 1..kStages
   float rate;   // Hz
   float dir;    // -1 or +1
   float phase;  // 0..1
@@ -121,7 +130,7 @@ void DELFX_INIT(uint32_t platform, uint32_t api) {
 
   s.time = 0.75f;
   s.depth = 0.5f;
-  s.wet = 0.5f;
+  s.stages = kStages;
   s.phase = 0.f;
   s.coef_tick = 1;
 
@@ -134,6 +143,7 @@ void DELFX_INIT(uint32_t platform, uint32_t api) {
 void DELFX_PROCESS(float *xn, uint32_t frames) {
   const int nframes = (int)frames;
   const float inc = s.rate / kFs;
+  const int nstages = s.stages;
 
   // A cascade that has rung down to the last floats would keep the FPU on its
   // slow denormal path for every stage; at -300 dB there is nothing to keep.
@@ -154,7 +164,7 @@ void DELFX_PROCESS(float *xn, uint32_t frames) {
       const float exc = fx_softclipf(0.2f, in + c.fb * s.fb_gain);
 
       float xa = exc;
-      for (int st = 0; st < kStages; ++st) {
+      for (int st = 0; st < nstages; ++st) {
         Stage &g = c.a[st];
         const float y = g.x1 + s.ca * (xa - g.y1);
         g.x1 = xa;
@@ -163,7 +173,7 @@ void DELFX_PROCESS(float *xn, uint32_t frames) {
       }
 
       float xb = exc;
-      for (int st = 0; st < kStages; ++st) {
+      for (int st = 0; st < nstages; ++st) {
         Stage &g = c.b[st];
         const float y = g.x1 + s.cb * (xb - g.y1);
         g.x1 = xb;
@@ -182,7 +192,7 @@ void DELFX_PROCESS(float *xn, uint32_t frames) {
 
       c.fb = fx_softclipf(0.2f, wet);
 
-      xn[2 * i + ch] = in + (wet - in) * s.wet;
+      xn[2 * i + ch] = in + (wet - in) * kMix;
     }
 
     s.phase += inc;
@@ -212,9 +222,24 @@ void DELFX_PARAM(uint8_t index, int32_t value) {
     updateRate();
     break;
 
-  case k_user_delfx_param_shift_depth:
-    s.wet = v;
+  case k_user_delfx_param_shift_depth: {
+    // One to eight notches, in whole numbers: half a notch is not a thing.
+    const int n = 1 + (int)(v * (float)(kStages - 1) + 0.5f);
+    if (n == s.stages)
+      break;
+    s.stages = n;
+    // A stage that comes back into the sweep starts empty instead of replaying
+    // whatever it held the last time it was on, which would be a click from a
+    // filter state that no longer belongs to this sweep.
+    for (int ch = 0; ch < 2; ++ch)
+      for (int st = n; st < kStages; ++st) {
+        s.ch[ch].a[st].x1 = 0.f;
+        s.ch[ch].a[st].y1 = 0.f;
+        s.ch[ch].b[st].x1 = 0.f;
+        s.ch[ch].b[st].y1 = 0.f;
+      }
     break;
+  }
 
   default:
     break;

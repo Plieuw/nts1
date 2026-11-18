@@ -3,6 +3,22 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## barber — 1.1-0
+
+- The number of notches is a control now, on the shifted DEPTH knob: one to
+  eight, one per all-pass section. It used to be fixed at eight. A section that
+  comes back into the sweep is emptied first, so the count can be turned while a
+  chord rings without a click from a filter state that no longer belongs there.
+- The dry/wet mix does not move any more: it sits at the middle, which is where
+  the notches are deepest. With the whole cascade on the wet side the unit is a
+  phase sweep and nothing else, and at the dry end there is no phaser at all, so
+  of the three controls this slot has the count was the one worth adding.
+- The harness prints `notch_db` for the delay unit: the level of the difference
+  between one notch and eight, with the sweep stopped, against the signal itself.
+  It measures -28 dB, and `tests/run.sh` fails below -45, because a knob that
+  does nothing measures -300. This is what a third octave band cannot see: an
+  all-pass cascade moves phase, not band energy.
+
 ## irbody — 1.4-0
 
 - The unit is silent 40 ms after the input goes quiet, so it cannot leave a note

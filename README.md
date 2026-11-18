@@ -71,7 +71,7 @@ where that chain does the most for it.
 | OSC | — | `bowed` | the only slot that is handed the note and keeps sounding for as long as the key is down; nothing later in the chain can make a struck sound sustain |
 | MOD | amp/EG | `lpg` | first slot after the amp envelope, so the follower hears the shape of the note, which is exactly what a vactrol gate wants. The NTS-1 has no user filter or EG slot |
 | MOD | amp/EG | `reso`, `elements` | they turn the oscillator into an instrument, so everything time based should come after them |
-| DELAY | mod | `barber` | a phaser belongs before the reverb, and it needs the dry/wet knob that only a delay or reverb unit gets; a modulation effect has no shift-depth parameter |
+| DELAY | mod | `barber` | a phaser belongs before the reverb, and it needs the shift-depth parameter that only a delay or reverb unit gets — that is where the notch count lives; a modulation effect has no such parameter |
 | REVERB | delay | `irbody` | a space belongs at the end of the chain, and a reverb unit gets the same 12 KB of code, 2.4 MB of SDRAM and shift-depth mix as a delay unit |
 
 One consequence of that chain is worth saying out loud, because it decides how
@@ -349,16 +349,23 @@ knobs and no note information, so the pitch is set by hand here.
 
 ### barber — delay effect (barberpole phaser)
 
-Eight all-pass sections sweep 60 Hz .. 9.6 kHz, and a second cascade half a cycle
-out of phase takes over where the first wraps around, crossfaded with a raised
-cosine. The result never jumps, so it rises (or falls) forever. Feedback sharpens
-the notches into the classic jet sound.
+One to eight all-pass sections, one notch each, sweep 60 Hz .. 9.6 kHz, and a
+second cascade half a cycle out of phase takes over where the first wraps around,
+crossfaded with a raised cosine. The result never jumps, so it rises (or falls)
+forever. Feedback sharpens the notches into the classic jet sound.
 
 | Control | Function |
 | --- | --- |
 | A (TIME) | rate and direction: left of centre falls, right of centre rises, further out is faster (0.02 .. 10 Hz) |
 | B (DEPTH) | feedback / resonance |
-| DEL + B | dry/wet — around the middle gives the deepest notches |
+| DEL + B | number of notches, one to eight |
+
+The dry/wet mix is fixed at the middle, which is where the notches are deepest:
+with the whole cascade on the wet side they are a phase sweep and nothing else,
+and at the dry end there is no phaser at all. The notch count is the control that
+was missing from the three this slot has, so it took the shifted DEPTH control and
+the mix became the fixed one. Adding or removing a section starts or empties that
+section's state, so the count can be turned while it runs without a click.
 
 ### irbody — reverb effect (instrument bodies)
 
@@ -680,8 +687,8 @@ so your units cannot collide with someone else's.
   edit parameters (hold `OSC` and turn `TYPE` to pick one, then turn the `B`
   knob) — so `noise` and `resonator` have an edit page and fill all six. A
   modfx unit gets only the two knobs (`TIME`, `DEPTH`), a delay and a reverb get
-  those plus a dry/wet that lives on the shift parameter (`DEL`/`REVERB` held,
-  then the `B` knob). There are no sub-menus in the format: parameter names and
+  those plus the shift parameter (`DEL`/`REVERB` held, then the `B` knob) — a
+  dry/wet on `irbody`, the notch count on `barber`. There are no sub-menus in the format: parameter names and
   ranges are fixed in the manifest, so a deeper menu would have to be faked with
   one parameter as a page selector, which is why none of these need one.
 * `irbody` is mono in the wet path, so the body is centred, and its tails are

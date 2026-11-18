@@ -69,7 +69,9 @@ how fast and how deep it feels is a judgement.
 * `elements` and `reso`: full wet, and check that a high note does not thin out.
   On `elements`, turn DEPTH up while a note rings: the ring should follow the
   knob and then end with the note, not hang under the next one.
-* `barber`: at the highest feedback setting it should still not run away.
+* `barber`: at the highest feedback setting it should still not run away. Turn
+  the notch count (`DEL` held, then the `B` knob) while a chord rings: the
+  character should go from one wide sweep to a dense comb, without a click.
 
 ## What to write down
 
