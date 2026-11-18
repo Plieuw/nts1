@@ -34,9 +34,12 @@
  * B-knob (DEPTH)  damping of the wet signal, dark .. open
  * DEL + B knob    dry/wet mix
  *
- * Two engines run during a switch and their outputs are crossfaded over 85 ms,
- * so turning the knob cannot click. Everything is set up in the parameter
- * callback, never in the audio callback.
+ * Two engines run during a switch and their banks are crossfaded over 85 ms, so
+ * turning the knob cannot click. Their tail is one network that both stand in
+ * (every body here is the guitar's size, so the lines are the same length for
+ * all of them), which is what keeps a switch from costing a second tail on a
+ * core that has no room for one. Everything is set up in the parameter callback,
+ * never in the audio callback.
  */
 
 #include "userrevfx.h"
@@ -94,21 +97,62 @@ constexpr float kStereoTrim = 0.72f;  // see engineSample
 constexpr float kApG = 0.6f;
 constexpr float kApG4 = 0.4f;
 
-// Only the buffers that need to be big live in SDRAM: the eighty five
-// milliseconds of comb line the tail stands in. Every other line here is a few
-// hundred floats, and each of them is read and written once per sample, so they
-// stay in SRAM where a sample does not wait for them. The .sdram section is not
-// zeroed at load time, so the buffers in it are cleared explicitly in
-// clearBuffers; the .bss ones are zeroed by the loader and cleared anyway.
-float g_comb[2][kCombs][kCombMax] __sdram;
-float g_ap1[2][kAp1Len];
-float g_ap2[2][kAp1Len];  // the side signal, so left and right differ
+// The comb delays carry the size of the object: a violin body answers inside a
+// few milliseconds, a room has to be a few metres across before it sounds like
+// one. They are coprime-ish on purpose, so the two do not line up into a pitch.
+// Two lines and not four: a body is a small object, and the extra lines buy
+// density a guitar-sized box does not have.
+constexpr float kBodyDelay0 = 0.0057f;
+constexpr float kBodyDelay1 = 0.0083f;
+constexpr float kBodyDelays[kCombs] = {kBodyDelay0, kBodyDelay1};
+
+// Every body this unit plays is the guitar's size (kBodySize), so the lines are
+// the same length whichever preset is chosen: 213 and 310 samples. That is what
+// lets the two engines in a crossfade share one set of them.
+constexpr int kCombLen[kCombs] = {(int)(kBodyDelay0 * kFs * kBodySize),
+                                  (int)(kBodyDelay1 * kFs * kBodySize)};
+
+// One set of lines for both engines: a body change then costs a second mode
+// bank, not a second tail. They are 2.6 KB, and they are in SRAM, where a sample
+// does not wait for them; the eighty five milliseconds of line this unit used to
+// hold for each engine would not have fit in the slot's 12 KB, which is why they
+// were in the external memory before.
+float g_comb[kCombs][kCombMax];
+float g_ap1[kAp1Len];
+float g_ap2[kAp1Len];  // the side signal, so left and right differ
 // The modes are one object, but they do not radiate from one point either: the
 // right channel takes them through an allpass of a third of a millisecond. An
 // allpass keeps the level, so this widens the upper partials of every body
 // without putting a notch in the sum.
 constexpr int kAp4Len = 17;
 float g_ap4[2][kAp4Len];
+
+// The tail's own state. It outlives a body, so it stands outside the engines: a
+// crossfade changes what the network is asked to do, not the network. The .bss
+// is zeroed by the loader, and clearTail is called from init and suspend anyway.
+struct TailState {
+  int comb_pos[kCombs];
+  float comb_lp[kCombs];
+  float comb_fb_out[kCombs];
+  float tail_lp_in;
+  float tail_out_lp;
+  float tail_out_lp_s;
+  int ap1_pos;
+  int ap2_pos;
+};
+
+// What one body asks of the shared tail, and nothing else: a crossfade walks
+// these from one body's numbers to the other's while the network between them
+// keeps running, which is what makes a switch cost a bank and not a tail.
+struct TailParams {
+  float comb_fb[kCombs];
+  float comb_damp[kCombs];
+  float tail_gain;
+  float tail_cut;
+  float tail_hi;
+  float tail_out_cut;
+  float level;
+};
 
 /*---------------------------------------------------------------------------*
  * One engine: the resonances of an object plus its tail
@@ -123,35 +167,19 @@ struct Engine {
   float y1[kMaxModes];
   float y2[kMaxModes];
 
-  // Diffuse tail.
-  int comb_len[kCombs];
-  int comb_pos[kCombs];
-  float comb_fb[kCombs];
-  float comb_damp[kCombs];
-  float comb_lp[kCombs];
-  float comb_fb_out[kCombs];
-  float tail_gain;
+  // What this body asks of the shared tail: the settings, not the state.
+  TailParams tail;
 
-  // Diffusion of the tail.
-  int ap1_pos;
-
-  // The model's tail is a low band plus a high band that dies away faster; the
-  // split is a one pole at 450 Hz on the way in.
-  float tail_cut;
-  float tail_hi;
-  float tail_lp_in;
-  float tail_out_cut;
-  float tail_out_lp;
-  float tail_out_lp_s;
+  // The short allpass the right channel's bank takes; where it stands is part of
+  // this body as much as its modes are.
   int ap4_pos;
-  float level;
-  int ap2_pos;
 };
 
-// The engines are state, not sound: 744 bytes for the pair, read and written
-// every sample, so they sit in SRAM with the lines above. The section is not
-// zeroed at load, so every field is written by clearEngine before it is read.
+// The engines are state, not sound: their modes and the numbers the tail is
+// driven with, read and written every sample, so they sit in SRAM. Every field
+// is written by clearEngine and buildEngine before it is read.
 Engine g_eng[2];
+TailState g_tail;
 
 struct State {
   int active;   // engine slot in the output
@@ -177,36 +205,36 @@ void clearEngine(Engine &e) {
     e.y1[k] = 0.f;
     e.y2[k] = 0.f;
   }
-  for (int c = 0; c < kCombs; ++c) {
-    e.comb_lp[c] = 0.f;
-    e.comb_pos[c] = 0;
-  }
-  e.tail_lp_in = 0.f;
-  e.tail_out_lp = 0.f;
-  e.tail_out_lp_s = 0.f;
-  e.ap1_pos = 0;
-  e.ap2_pos = 0;
   e.ap4_pos = 0;
 }
 
-void clearBuffers(int slot) {
-  for (int c = 0; c < kCombs; ++c)
-    for (int i = 0; i < kCombMax; ++i)
-      g_comb[slot][c][i] = 0.f;
-  for (int i = 0; i < kAp1Len; ++i) {
-    g_ap1[slot][i] = 0.f;
-    g_ap2[slot][i] = 0.f;
+void clearTail() {
+  for (int c = 0; c < kCombs; ++c) {
+    g_tail.comb_lp[c] = 0.f;
+    g_tail.comb_fb_out[c] = 0.f;
+    g_tail.comb_pos[c] = 0;
   }
-  for (int i = 0; i < kAp4Len; ++i)
-    g_ap4[slot][i] = 0.f;
+  g_tail.tail_lp_in = 0.f;
+  g_tail.tail_out_lp = 0.f;
+  g_tail.tail_out_lp_s = 0.f;
+  g_tail.ap1_pos = 0;
+  g_tail.ap2_pos = 0;
 }
 
-// The comb delays carry the size of the object: a violin body answers inside a
-// few milliseconds, a room has to be a few metres across before it sounds like
-// one. They are coprime-ish on purpose, so the two do not line up into a pitch.
-// Two lines and not four: a body is a small object, and the extra lines buy
-// density a guitar-sized box does not have.
-const float kBodyDelays[kCombs] = {0.0057f, 0.0083f};
+void clearBuffers() {
+  for (int c = 0; c < kCombs; ++c)
+    for (int i = 0; i < kCombMax; ++i)
+      g_comb[c][i] = 0.f;
+  for (int i = 0; i < kAp1Len; ++i) {
+    g_ap1[i] = 0.f;
+    g_ap2[i] = 0.f;
+  }
+  for (int i = 0; i < kAp4Len; ++i) {
+    g_ap4[0][i] = 0.f;
+    g_ap4[1][i] = 0.f;
+  }
+  clearTail();
+}
 
 // How loud the resonances and the tail sit in each object, fitted band by band
 // to the responses the old version convolved with. The bank is the modes; the
@@ -262,7 +290,6 @@ void buildEngine(int slot, float pos) {
                                 : gb + (trimB.bank - gb) * (2.f * t - 1.f),
                      (t < 0.5f) ? trimA.tail + (gt - trimA.tail) * (2.f * t)
                                 : gt + (trimB.tail - gt) * (2.f * t - 1.f)};
-  const float size = kBodySize;
   const float level = arc_dbtolevel(kLevelDb[a] + (kLevelDb[b] - kLevelDb[a]) * t);
   // Both bodies' brightness, not the nearest one's: the mode set jumps at the
   // half step, but brightness is a number and glides the whole way.
@@ -270,7 +297,6 @@ void buildEngine(int slot, float pos) {
   const irmodel::Preset &pb = irmodel::kPresets[b];
   const float bright = pa.bright + (pb.bright - pa.bright) * t;
   Engine &e = g_eng[slot];
-  clearBuffers(slot);
   clearEngine(e);
 
   // Resonances. The mode list, its frequencies and its damping come straight
@@ -312,15 +338,9 @@ void buildEngine(int slot, float pos) {
   const float tauA = (irmodel::kPresets[a].noise_tau > 0.0005f) ? irmodel::kPresets[a].noise_tau : 0.0005f;
   const float tauB = (irmodel::kPresets[b].noise_tau > 0.0005f) ? irmodel::kPresets[b].noise_tau : 0.0005f;
   const float tau = clipminmaxf(0.0005f, tauA + (tauB - tauA) * t, kMaxTailTau);
-  for (int c = 0; c < kCombs; ++c) {
-    int len = (int)(kBodyDelays[c] * kFs * size);
-    if (len > kCombMax)
-      len = kCombMax;
-    if (len < 16)
-      len = 16;
-    e.comb_len[c] = len;
-    e.comb_fb[c] = clipminmaxf(0.f, arc_expneg((float)len / (tau * kFs)), 0.93f);
-  }
+  for (int c = 0; c < kCombs; ++c)
+    e.tail.comb_fb[c] =
+        clipminmaxf(0.f, arc_expneg((float)kCombLen[c] / (tau * kFs)), 0.93f);
   // Brightness is how long the high band lives compared with the low one; in the
   // loop that is a one pole that takes a little more away each pass, and the same
   // one for all four lines.
@@ -328,33 +348,33 @@ void buildEngine(int slot, float pos) {
     const float fc = clipminmaxf(400.f, 500.f + 3500.f * bright, 0.45f * kFs);
     const float damp = 1.f - arc_expneg(2.f * kPi * fc / kFs);
     for (int c = 0; c < kCombs; ++c)
-      e.comb_damp[c] = damp;
+      e.tail.comb_damp[c] = damp;
   }
   const float noiseA = irmodel::kPresets[a].noise, noiseB = irmodel::kPresets[b].noise;
-  e.tail_gain = (noiseA + (noiseB - noiseA) * t) * trim.tail;
+  e.tail.tail_gain = (noiseA + (noiseB - noiseA) * t) * trim.tail;
 
   // The model's tail is a low band with a high band on top, and the high band is
   // the one that dies first: the split on the way in and the one pole at the end
   // are what let the tail darken as it goes instead of sounding like noise.
-  e.tail_cut = 1.f - arc_expneg(2.f * kPi * 450.f / kFs);
-  e.tail_hi = 0.2f + 0.6f * bright;
+  e.tail.tail_cut = 1.f - arc_expneg(2.f * kPi * 450.f / kFs);
+  e.tail.tail_hi = 0.2f + 0.6f * bright;
   const float tail_lp = 900.f + 2600.f * bright;
-  e.tail_out_cut = 1.f - arc_expneg(2.f * kPi * tail_lp / kFs);
+  e.tail.tail_out_cut = 1.f - arc_expneg(2.f * kPi * tail_lp / kFs);
 
-  e.level = level;
+  e.tail.level = level;
 }
 
 /*---------------------------------------------------------------------------*
  * Rendering
  *---------------------------------------------------------------------------*/
 
-// Left and right are two orthogonal mixtures of the same four lines, then a
-// separate allpass on the difference: the body is one object, so its resonances
-// stay in the middle, but the tail arrives from slightly different places.
+// The body's own half: the resonances, and the short allpass the right channel's
+// bank takes. Left and right are one object, so the modes stay in the middle;
+// the rotation only widens the upper partials and never puts a notch in the sum.
 // Deliberately not inline: the slot has 12 KB of flash for everything, and the
 // fade path and the plain path both call this, so inlining it costs a kilobyte.
-__attribute__((noinline)) void engineSample(int slot, Engine &e, float x,
-                                            float &out_l, float &out_r) {
+__attribute__((noinline)) void bankSample(int slot, Engine &e, float x,
+                                          float &mid, float &right) {
   // Resonances: two poles, driven by the input, summed with the mode levels.
   float bank = 0.f;
   for (int k = 0; k < e.modes; ++k) {
@@ -364,67 +384,10 @@ __attribute__((noinline)) void engineSample(int slot, Engine &e, float x,
     bank += e.mode_gain[k] * y;
   }
 
-  // Tail: two damped combs in parallel, then the allpass that smears them.
-  e.tail_lp_in += (x - e.tail_lp_in) * e.tail_cut;
-  const float drive = e.tail_lp_in + (x - e.tail_lp_in) * e.tail_hi;
-
-  // Two delay lines in a feedback delay network: each line's output is damped,
-  // fed back through a Householder matrix and summed into every other line. That
-  // is what makes the tail dense; combs side by side would leave the peaks of
-  // their own lengths standing, which sounds like a flange instead of a body.
-  float tail = 0.f;
-  float side = 0.f;
-  float out_sum = 0.f;
-  for (int c = 0; c < kCombs; ++c) {
-    const float out = g_comb[slot][c][e.comb_pos[c]];
-    e.comb_lp[c] += (out - e.comb_lp[c]) * e.comb_damp[c];
-    e.comb_fb_out[c] = e.comb_lp[c] * e.comb_fb[c];
-    out_sum += e.comb_fb_out[c];
-    tail += out;
-    int p2 = e.comb_pos[c] + kTap[c];
-    if (p2 >= e.comb_len[c]) p2 -= e.comb_len[c];
-    side += g_comb[slot][c][p2];
-  }
-  const float h = out_sum * (2.f / (float)kCombs);
-  for (int c = 0; c < kCombs; ++c) {
-    float *buf = g_comb[slot][c];
-    buf[e.comb_pos[c]] = drive + (e.comb_fb_out[c] - h);
-    if (++e.comb_pos[c] >= e.comb_len[c])
-      e.comb_pos[c] = 0;
-  }
-  tail *= 0.25f;
-
-  {
-    float *buf = g_ap1[slot];
-    const float d = buf[e.ap1_pos];
-    const float y = d - kApG * tail;
-    buf[e.ap1_pos] = tail + kApG * y;
-    if (++e.ap1_pos >= kAp1Len)
-      e.ap1_pos = 0;
-    tail = y;
-  }
-
-  {
-    float *buf = g_ap2[slot];
-    const float d = buf[e.ap2_pos];
-    const float y = d - kApG * side;
-    buf[e.ap2_pos] = side + kApG * y;
-    if (++e.ap2_pos >= kAp1Len)
-      e.ap2_pos = 0;
-    side = y;
-  }
-
-  // The model's tail is a low band with a high band on top of it, and the high
-  // band is what dies first: the combs, the split and this one pole are what
-  // make the tail darken as it goes instead of sounding like filtered noise.
-  e.tail_out_lp += (tail - e.tail_out_lp) * e.tail_out_cut;
-  e.tail_out_lp_s += (side - e.tail_out_lp_s) * e.tail_out_cut;
-
   // Each channel carries the whole body, so both are trimmed to keep the pair
   // from being louder than the mono unit used to be, and the trim is taken once.
   const float bank_trim = kStereoTrim * bank;
-  const float mid = bank_trim;
-  const float t_m = kStereoTrim * e.tail_out_lp * e.tail_gain;
+  mid = bank_trim;
 
   float bank_r = bank_trim;
   {
@@ -438,20 +401,74 @@ __attribute__((noinline)) void engineSample(int slot, Engine &e, float x,
     // different violins.
     bank_r = 0.85f * bank_r + 0.15f * y;
   }
+  right = bank_r;
+}
 
-  out_l = (mid + t_m) * e.level;
-  out_r = (bank_r + kStereoTrim * e.tail_out_lp_s * e.tail_gain) * e.level;
+// The tail both bodies stand in: two damped combs, the allpasses that smear them
+// and the one pole that darkens the tail as it dies. Its state is shared and its
+// settings come from the body, or from the blend of two while a crossfade runs.
+__attribute__((noinline)) void tailSample(float x, const TailParams &tp,
+                                          float &out_l, float &out_r) {
+  TailState &t = g_tail;
 
-  // A bank that has gone non-finite — a NaN in a feedback line, a jump that
-  // pushed a mode past its own limit — would sit in the slot forever. The gate
-  // below would hide it, but it would be back with the next note, so it is
-  // dropped here instead.
-  if (!(out_l > -kBankLimit && out_l < kBankLimit) ||
-      !(out_r > -kBankLimit && out_r < kBankLimit)) {
-    clearEngine(e);
-    out_l = 0.f;
-    out_r = 0.f;
+  // The model's tail is a low band plus a high band that dies away faster; the
+  // split is a one pole at 450 Hz on the way in.
+  t.tail_lp_in += (x - t.tail_lp_in) * tp.tail_cut;
+  const float drive = t.tail_lp_in + (x - t.tail_lp_in) * tp.tail_hi;
+
+  // Two delay lines in a feedback delay network: each line's output is damped,
+  // fed back through a Householder matrix and summed into every other line. That
+  // is what makes the tail dense; combs side by side would leave the peaks of
+  // their own lengths standing, which sounds like a flange instead of a body.
+  float tail = 0.f;
+  float side = 0.f;
+  float out_sum = 0.f;
+  for (int c = 0; c < kCombs; ++c) {
+    const float out = g_comb[c][t.comb_pos[c]];
+    t.comb_lp[c] += (out - t.comb_lp[c]) * tp.comb_damp[c];
+    t.comb_fb_out[c] = t.comb_lp[c] * tp.comb_fb[c];
+    out_sum += t.comb_fb_out[c];
+    tail += out;
+    int p2 = t.comb_pos[c] + kTap[c];
+    if (p2 >= kCombLen[c]) p2 -= kCombLen[c];
+    side += g_comb[c][p2];
   }
+  const float h = out_sum * (2.f / (float)kCombs);
+  for (int c = 0; c < kCombs; ++c) {
+    float *buf = g_comb[c];
+    buf[t.comb_pos[c]] = drive + (t.comb_fb_out[c] - h);
+    if (++t.comb_pos[c] >= kCombLen[c])
+      t.comb_pos[c] = 0;
+  }
+  tail *= 0.25f;
+
+  {
+    float *buf = g_ap1;
+    const float d = buf[t.ap1_pos];
+    const float y = d - kApG * tail;
+    buf[t.ap1_pos] = tail + kApG * y;
+    if (++t.ap1_pos >= kAp1Len)
+      t.ap1_pos = 0;
+    tail = y;
+  }
+
+  {
+    float *buf = g_ap2;
+    const float d = buf[t.ap2_pos];
+    const float y = d - kApG * side;
+    buf[t.ap2_pos] = side + kApG * y;
+    if (++t.ap2_pos >= kAp1Len)
+      t.ap2_pos = 0;
+    side = y;
+  }
+
+  // The high band is what dies first: the combs, the split and these two poles
+  // are what make the tail darken as it goes instead of sounding like filtered
+  // noise.
+  t.tail_out_lp += (tail - t.tail_out_lp) * tp.tail_out_cut;
+  t.tail_out_lp_s += (side - t.tail_out_lp_s) * tp.tail_out_cut;
+  out_l = t.tail_out_lp;
+  out_r = t.tail_out_lp_s;
 }
 
 void updateDamping() {
@@ -501,8 +518,7 @@ void REVFX_INIT(uint32_t platform, uint32_t api) {
   s.quiet = 0;
 
   updateDamping();
-  clearBuffers(0);
-  clearBuffers(1);
+  clearBuffers();
   buildEngine(0, 0);
   s.ready = 1;
 }
@@ -520,6 +536,25 @@ void REVFX_PROCESS(float *xn, uint32_t frames) {
     for (int i = 0; i < nframes * 2; ++i)
       xn[i] = 0.f;
     return;
+  }
+
+  // What the shared tail is asked for this block: the active body's numbers, or
+  // a walk towards the one fading in. Once a block is enough — 1.33 ms of a
+  // parameter that takes 85 ms to travel is a step nobody can hear, and it keeps
+  // the blend out of the per-sample path.
+  TailParams tp = g_eng[s.active].tail;
+  if (s.target >= 0) {
+    const TailParams &b = g_eng[s.target].tail;
+    const float f = s.fade;
+    for (int c = 0; c < kCombs; ++c) {
+      tp.comb_fb[c] += (b.comb_fb[c] - tp.comb_fb[c]) * f;
+      tp.comb_damp[c] += (b.comb_damp[c] - tp.comb_damp[c]) * f;
+    }
+    tp.tail_gain += (b.tail_gain - tp.tail_gain) * f;
+    tp.tail_cut += (b.tail_cut - tp.tail_cut) * f;
+    tp.tail_hi += (b.tail_hi - tp.tail_hi) * f;
+    tp.tail_out_cut += (b.tail_out_cut - tp.tail_out_cut) * f;
+    tp.level += (b.level - tp.level) * f;
   }
 
   for (int i = 0; i < nframes; ++i) {
@@ -542,14 +577,14 @@ void REVFX_PROCESS(float *xn, uint32_t frames) {
     }
 
     const int sa = s.active;
-    float wl, wr;
+    float mid, right;
+    bankSample(sa, g_eng[sa], in, mid, right);
     if (s.target >= 0) {
       const float f = s.fade;
-      float al, ar, bl, br;
-      engineSample(sa, g_eng[sa], in, al, ar);
-      engineSample(s.target, g_eng[s.target], in, bl, br);
-      wl = (1.f - f) * al + f * bl;
-      wr = (1.f - f) * ar + f * br;
+      float m2, r2;
+      bankSample(s.target, g_eng[s.target], in, m2, r2);
+      mid = (1.f - f) * mid + f * m2;
+      right = (1.f - f) * right + f * r2;
       s.fade += 1.f / (float)kFadeSamples;
       if (s.fade >= 1.f) {
         s.active = s.target;
@@ -560,8 +595,23 @@ void REVFX_PROCESS(float *xn, uint32_t frames) {
           s.queued = -1.f;
         }
       }
-    } else {
-      engineSample(sa, g_eng[sa], in, wl, wr);
+    }
+
+    float tl, tr;
+    tailSample(in, tp, tl, tr);
+    float wl = (mid + kStereoTrim * tl * tp.tail_gain) * tp.level;
+    float wr = (right + kStereoTrim * tr * tp.tail_gain) * tp.level;
+
+    // A bank that has gone non-finite — a NaN in a feedback line, a jump that
+    // pushed a mode past its own limit — would sit in the slot forever. The gate
+    // below would hide it, but it would be back with the next note, so it is
+    // dropped here instead.
+    if (!(wl > -kBankLimit && wl < kBankLimit) ||
+        !(wr > -kBankLimit && wr < kBankLimit)) {
+      clearEngine(g_eng[s.active]);
+      clearTail();
+      wl = 0.f;
+      wr = 0.f;
     }
 
     s.damp_lp += (wl - s.damp_lp) * s.damp_coef;
@@ -617,8 +667,7 @@ void REVFX_PARAM(uint8_t index, int32_t value) {
 }
 
 void REVFX_SUSPEND(void) {
-  clearBuffers(0);
-  clearBuffers(1);
+  clearBuffers();
   clearEngine(g_eng[0]);
   clearEngine(g_eng[1]);
   s.target = -1;

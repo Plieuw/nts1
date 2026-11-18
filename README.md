@@ -383,6 +383,21 @@ body — a wood block is wider than a drum — and the two average back to the l
 the unit had before. The harness measures the correlation on the 21 ms right
 after the input stops, `corr_hi` the same window above 2 kHz.
 
+The tail is one network, not one per engine. Every body here is the guitar's
+size, so the two delay lines are the same length whichever preset is chosen, and
+both engines in a crossfade can stand in the same set of them: a body change
+costs a second mode bank instead of a second tail, and the network's settings
+are walked from one body's numbers to the other's once a block while the 85 ms
+fade runs. That is the peak the instrument was paying for while a knob turned —
+715 → 654 cycles a frame standing still and 1327 → 1031 with a crossfade
+running, counted off the image. Standing still the unit is sample for sample
+what it was; while the knob moves the two builds differ by -19 dB (correlation
+0.994), because one tail carries both bodies where two used to be summed.
+
+It is also what took the last buffer out of SDRAM: the comb lines are 2.6 KB and
+they fit in the slot's 12 KB now that there is one set instead of two, so a
+sample no longer waits for the external memory on the hottest path in the unit.
+
 The A knob is a continuum. It still picks the family, but between two bodies the
 damping, brightness, level and size glide from one into the next, so a violin
 can be walked into a cello instead of jumping. The mode ratios stay with the
@@ -563,10 +578,10 @@ effect slots are handed between notes.
 | `reso` | 2.1 KB | 0.4 KB | 28.6 → 22.3 ns (**-22%**) | 29.5 → 2.6 ns (**-91%**) |
 | `elements` | 2.6 KB | 0.4 KB | 39.2 → 16.3 ns (**-58%**) | 39.9 → 1.6 ns (**-96%**) |
 | `barber` | 1.9 KB | 0.3 KB | 33.7 → 33.9 ns | 34.0 → 2.4 ns (**-93%**) |
-| `irbody` | 5.2 KB | 2.3 KB + 5 KB SDRAM | 42.2 → 36.3 ns (**-14%**) | 46.5 → 2.1 ns (**-95%**) |
+| `irbody` | 5.3 KB | 4.0 KB | 42.2 → 32.3 ns (**-23%**) | 46.5 → 2.1 ns (**-95%**) |
 
 Summed over one slot of each type — `bowed`, `elements`, `barber` and `irbody`,
-which is a full house on the mkI — that is 129 → 97 ns/frame while playing, and
+which is a full house on the mkI — that is 129 → 93 ns/frame while playing, and
 128 → 7.7 ns/frame with the instrument idle. Which slot types run at once is the
 difference the instrument hears: four slots together used to do the same work
 whether or not a note was sounding, and between notes now almost none.
@@ -776,10 +791,9 @@ so your units cannot collide with someone else's.
   convolution stopped after 85 ms.
 * The mkI gives a modfx unit 6 KB of SRAM and a delay or reverb unit 12 KB of
   code space plus 2.4 MB of SDRAM; all units stay well inside those budgets now
-  that none of them links the maths library. `irbody` uses 52 KB of that SDRAM for
-  its delay lines and 4980 bytes of its 12288, which it did not before: the unit
-  that carried libm for its `powf` and `sqrtf` carried 6676 bytes more than this
-  one does.
+  that none of them links the maths library. `irbody` is 9432 of its 12288 and
+  needs none of the SDRAM now: its delay lines are one shared set of 2.6 KB in
+  SRAM, where two cost it 5 KB of the external memory.
 
 ## License
 

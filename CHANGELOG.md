@@ -3,6 +3,39 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## irbody — one tail
+
+The unit was down to two comb lines and still the most expensive thing here, and
+on the instrument it was the moment a knob was turned that pulled it over: a
+body change ran two engines, and each of them carried a tail. Every body on this
+unit is the guitar's size, so the two delay lines are the same length whichever
+preset is chosen; two engines can stand in one set of them.
+
+- One tail for both engines. A crossfade now costs a second mode bank, and the
+  network's settings — feedback, damping, the two tail poles, the level — are
+  walked from one body's numbers to the other's once a block for the 85 ms it
+  runs. The tail keeps sounding through a switch instead of being rebuilt.
+- That also took the last buffer out of SDRAM. The comb lines are 2.6 KB in
+  SRAM now, where a sample does not wait for them, and the whole unit is 9432 of
+  its 12288 bytes with nothing in the external memory — it was 5 KB there, and
+  the slot had no room for it here.
+- Counted off the image with `tools/cycles.py`, with every loop body at its own
+  iteration count, an eleven mode body: 715 → 654 cycles a frame standing still
+  (-8.5%, and the host agrees at 36.2 → 32.3 ns), and 1327 → 1031 with a body
+  change running (-22%). At 168 MHz that peak is 38% → 29% of one 48 kHz frame,
+  on the slot that was accused of not fitting.
+- What it does to the sound: standing still, sample for sample identical — the
+  same input through the violin body hashes the same, because the arithmetic of
+  the tail is untouched. While the knob moves the two builds differ by -19 dB
+  (correlation 0.994), because one tail carries both bodies where two used to be
+  summed.
+
+The irbody goldens moved, in the parameters the harness sweeps — that is, in the
+crossfades. `audio/ir-sweep-old.wav` and `-new.wav` are the same two second
+sweep in both builds.
+
+Versions: `irbody` 1.9-0.
+
 ## irbody — two lines
 
 The pass before this one capped every body at a guitar and took the network from
