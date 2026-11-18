@@ -519,26 +519,60 @@ without having to think about it:
   `elements` reached a 179 s ring time at the bell end and measured +1 dB there
   before this change. Its bell end is 2 s now, and -36 dB at the top.
 
-Measured on the host (x86, gcc 10.3, minimum of five pinned runs, one 64 frame
-block at 48 kHz is 1.333 ms); the numbers are a comparison between the units,
-not an M4 prediction — the gap is about two orders of magnitude, see `bowed`
-above. The one row that is not a host figure is `bowed`: it is counted on the M4
-from its own image, so its cost column is in cycles and in block time. One
-caveat on the others: the SDK's lookup helpers are libm calls in the host
-harness, so the units that refresh coefficients while they run (`lpg`, `barber`)
-look relatively more expensive here than they are on the M4, where those helpers
-are table lookups.
+Measured with `tools/bench.cpp`: the same workload in every unit, nanoseconds per
+audio frame on this host (x86, gcc 10.3, 20 s of audio, minimum of three passes).
+The previous build is run alternately in the same session, so a busy machine
+cannot flatter either column. One 64 frame block at 48 kHz is 1.333 ms, and these
+are a comparison — between units and against the version before this one — not an
+M4 prediction: the gap is about two orders of magnitude, see `bowed` above. The
+one figure that is not from this host is `bowed`'s 777 cycles per frame, counted
+on the M4 from its own image.
 
-| Unit | Text + data | SRAM | Cost |
-| --- | --- | --- | --- |
-| `noise` | 5.8 KB | 0.4 KB | 15 ns/frame |
-| `resonator` | 5.1 KB | 1.5 KB | 19 ns/frame (71 with four voices) |
-| `bowed` | 2.9 KB | 16.6 KB | **777 cycles/frame**, 21% of a block (M4, four voices) |
-| `lpg` | 1.6 KB | 0.1 KB | 27 ns/frame |
-| `reso` | 1.5 KB | 0.4 KB | 13 ns/frame |
-| `elements` | 2.1 KB | 0.7 KB | 18 ns/frame |
-| `barber` | 1.8 KB | 0.3 KB | 45 ns/frame |
-| `irbody` | 3.6 KB | 52 KB SDRAM | 30 ns/frame |
+**Busy** is a note held (a spread of tones for the effects); **idle** is the same
+unit with nothing to do — no key down, or digital silence in, which is what the
+effect slots are handed between notes.
+
+| Unit | Text + data | SRAM | Busy | Idle |
+| --- | --- | --- | --- | --- |
+| `noise` | 5.8 KB | 0.4 KB | 8.5 → 8.7 ns/frame (unchanged) | 8.5 → 8.3 ns |
+| `resonator` | 5.3 KB | 1.5 KB | 31.8 → 28.7 ns (**-10%**) | 1.4 → 1.7 ns |
+| `bowed` | 2.8 KB | 16.3 KB | 14.0 → 14.0 ns | 7.1 → 7.1 ns |
+| `lpg` | 1.7 KB | 0.1 KB | 21.0 → 20.9 ns | 21.1 → 2.6 ns (**-88%**) |
+| `reso` | 2.1 KB | 0.4 KB | 29.1 → 22.3 ns (**-24%**) | 29.8 → 2.6 ns (**-91%**) |
+| `elements` | 2.7 KB | 0.7 KB | 39.0 → 30.1 ns (**-23%**) | 40.0 → 2.5 ns (**-94%**) |
+| `barber` | 1.9 KB | 0.3 KB | 33.7 → 33.7 ns | 33.9 → 3.0 ns (**-91%**) |
+| `irbody` | 5.2 KB | 52 KB SDRAM | 42.3 → 42.2 ns | 46.3 → 2.7 ns (**-94%**) |
+
+Summed over one slot of each type — an oscillator, a modulation effect, the delay
+and the reverb — that is 129 → 105 ns/frame while playing, and 103 → 9.9 ns/frame
+with the instrument idle. Which slot types run at once is the difference the
+instrument hears: four slots together were doing a fifth more work than they do
+now, and between notes almost none.
+
+What was done, and why the sound does not move:
+
+* `elements` and `reso` compute both timbres in one pass over the modes. The
+  coefficients are shared by the two channels and were loaded twice; they are
+  loaded once now, with the same three terms per channel in the same order.
+* `resonator` skips the per-mode drive coefficient once the strike is over — a
+  few milliseconds into the note — because that term is exactly zero after it, so
+  the two paths agree sample for sample.
+* Every effect slot now skips a block whose input is digital silence when its own
+  state has run down. That is not an approximation: every term of the sum is
+  zero, so the output is written and the DSP is not run. It is where most of the
+  saving is, because the slots used to run flat out between notes. `barber` and
+  `irbody` also stop advancing their own state there (the phaser's LFO phase, the
+  bodies), which by then is 20 ms behind and below -180 dB.
+* `barber` steps its two cascades in one pass over the stages: the same
+  arithmetic, but two independent chains for the core to interleave instead of
+  one at a time, and half the loop bookkeeping. `lpg` gets the same per-channel
+  skip as the other effects.
+* The state guards that keep a bank off the FPU's denormal path now trigger at
+  -180 dB instead of -300 dB, which is what lets an idle channel be skipped
+  rather than merely cleared.
+* `noise` and `bowed` are unchanged and were the cheap ones already: a noise
+  source has to render every frame, and `bowed`'s four voices are skipped when
+  they are idle, so there is nothing to take out without changing the sound.
 
 ## Installing on the NTS-1
 
@@ -572,6 +606,13 @@ tests/run.sh --golden   # rewrite them, when the change is intended
 
 Two things it cannot tell you: what a unit sounds like on the instrument, and
 what it costs there. The host is not a Cortex-M4F.
+
+What it can tell you is which way a change moved the cost. `tools/bench.cpp` is
+built the same way as the harness (one unit, `UNITKIND`, `UNITFILE`) and prints
+nanoseconds per audio frame for a unit that is playing and for one that is idle;
+the cost table above comes from it. `tools/cycles.py` is the other half: it
+prices a range of a unit's own ARM code with the Cortex-M4's timings, which is
+how `bowed`'s 777 cycles were counted.
 
 ## Building
 

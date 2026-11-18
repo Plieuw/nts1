@@ -41,6 +41,7 @@
 
 #include "userrevfx.h"
 #include "../../common/program_start.h"
+#include "../../common/silence.h"
 
 #include "../../common/arcmath.h"
 
@@ -531,6 +532,15 @@ void REVFX_PROCESS(float *xn, uint32_t frames) {
 
   if (!s.ready)
     return;
+
+  // The gate shuts 20 ms after the input goes quiet, and from then on the
+  // output is zero whatever the bodies are doing. Skips the block, which is what
+  // the reverb slot is doing whenever nothing is played.
+  if (s.gate <= 0.f && silence::block(xn, (uint32_t)nframes, 2)) {
+    for (int i = 0; i < nframes * 2; ++i)
+      xn[i] = 0.f;
+    return;
+  }
 
   for (int i = 0; i < nframes; ++i) {
     const float in = 0.5f * (xn[2 * i] + xn[2 * i + 1]);

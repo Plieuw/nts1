@@ -23,6 +23,7 @@
 
 #include "userdelfx.h"
 #include "../../common/program_start.h"
+#include "../../common/silence.h"
 
 namespace {
 
@@ -148,14 +149,25 @@ void DELFX_PROCESS(float *xn, uint32_t frames) {
   const int nstages = s.stages;
 
   // A cascade that has rung down to the last floats would keep the FPU on its
-  // slow denormal path for every stage; at -300 dB there is nothing to keep.
+  // slow denormal path for every stage; below -180 dB there is nothing to keep.
+  bool down[2];
   for (int ch = 0; ch < 2; ++ch) {
     Channel &c = s.ch[ch];
     float mag = fabsf(c.fb);
     for (int i = 0; i < kStages; ++i)
       mag += fabsf(c.a[i].y1) + fabsf(c.b[i].y1);
-    if (mag < 1e-15f)
+    down[ch] = mag < 1e-9f;
+    if (down[ch])
       clearChannel(c);
+  }
+
+  // Digital silence in and both cascades down to nothing: the output is zero
+  // either way. The delay slot is handed silence whenever nothing is playing,
+  // which is most of the time.
+  if (down[0] && down[1] && silence::block(xn, frames, 2)) {
+    for (uint32_t i = 0; i < frames * 2u; ++i)
+      xn[i] = 0.f;
+    return;
   }
 
   for (int i = 0; i < nframes; ++i) {
@@ -165,22 +177,23 @@ void DELFX_PROCESS(float *xn, uint32_t frames) {
 
       const float exc = fx_softclipf(0.2f, in + c.fb * s.fb_gain);
 
+      // The two cascades are independent of each other, so they are stepped in
+      // one pass over the stages: the same arithmetic per stage, but two chains
+      // for the core to interleave instead of one at a time, and half the loop
+      // bookkeeping.
       float xa = exc;
-      for (int st = 0; st < nstages; ++st) {
-        Stage &g = c.a[st];
-        const float y = g.x1 + s.ca * (xa - g.y1);
-        g.x1 = xa;
-        g.y1 = y;
-        xa = y;
-      }
-
       float xb = exc;
       for (int st = 0; st < nstages; ++st) {
-        Stage &g = c.b[st];
-        const float y = g.x1 + s.cb * (xb - g.y1);
-        g.x1 = xb;
-        g.y1 = y;
-        xb = y;
+        Stage &ga = c.a[st];
+        Stage &gb = c.b[st];
+        const float ya = ga.x1 + s.ca * (xa - ga.y1);
+        const float yb = gb.x1 + s.cb * (xb - gb.y1);
+        ga.x1 = xa;
+        ga.y1 = ya;
+        gb.x1 = xb;
+        gb.y1 = yb;
+        xa = ya;
+        xb = yb;
       }
 
       // The two cascades sum incoherently with the dry signal, so trim the wet

@@ -530,12 +530,25 @@ void render(q31_t *__restrict y, const uint32_t frames) {
       float *const y1 = v.y1;
       float *const y2 = v.y2;
 
+      // The strike is over a few milliseconds into the note, and after that the
+      // excitation term is exactly zero for the rest of it: the bank is then a
+      // free decay and does not need the per-mode drive coefficient loaded at
+      // all. Adding zero is exact, so the two paths agree sample for sample.
       float sum = 0.f;
-      for (int k = 0; k < modes; ++k) {
-        const float val = amp[k] * exc + a1[k] * y1[k] + a2[k] * y2[k];
-        y2[k] = y1[k];
-        y1[k] = val;
-        sum += val;
+      if (exc != 0.f) {
+        for (int k = 0; k < modes; ++k) {
+          const float val = amp[k] * exc + a1[k] * y1[k] + a2[k] * y2[k];
+          y2[k] = y1[k];
+          y1[k] = val;
+          sum += val;
+        }
+      } else {
+        for (int k = 0; k < modes; ++k) {
+          const float val = a1[k] * y1[k] + a2[k] * y2[k];
+          y2[k] = y1[k];
+          y1[k] = val;
+          sum += val;
+        }
       }
 
       // A strike or a glide can move the modes under a bank that is still

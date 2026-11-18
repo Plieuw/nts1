@@ -3,6 +3,36 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## all eight units — cost
+
+Four slots run at once, so their cost adds up: one oscillator, one modulation
+effect, the delay and the reverb. Measured on the host with `tools/bench.cpp`
+(the same workload in every unit, the previous build run alternately in the same
+session, minimum of three passes), one slot of each type together went from 129
+to 105 ns per frame while playing and from 103 to 9.9 ns per frame with the
+instrument idle.
+
+- `elements` and `reso` compute both timbres in one pass over the modes: the
+  coefficients are shared by the two channels and were loaded twice, now once.
+  -23% and -24% while playing.
+- `resonator` skips the per-mode drive coefficient once the strike is over, at
+  -10%. The excitation term is exactly zero after it, so both paths agree sample
+  for sample.
+- Every effect slot skips a block that is digital silence in with silence inside
+  — -88% to -94% of an idle slot. Every term of the sum is zero there, so the
+  output is written and the DSP is not run; `barber` and `irbody` also stop
+  advancing their own state, which is 20 ms behind and below -180 dB by then.
+- `barber` steps its two cascades in one pass (same arithmetic, two chains for
+  the core to interleave), and `lpg` gets the per-channel skip.
+- `noise` and `bowed` are unchanged: they were the cheap ones, and a noise source
+  has to render every frame.
+
+One golden moved on purpose: `barber`'s `bands_tail`, from -187 dB of residue to
+exact silence, because the block is now skipped rather than processed to nothing.
+
+Versions: `resonator` 1.8-0, `lpg` 1.2-0, `reso` 1.2-0, `elements` 1.3-0,
+`barber` 1.3-0, `irbody` 1.6-0. `noise` and `bowed` keep theirs.
+
 ## all eight units — start values
 
 A newly installed unit sounded like nothing on the instrument until a knob was

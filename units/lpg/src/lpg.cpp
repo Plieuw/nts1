@@ -18,10 +18,14 @@
 
 #include "usermodfx.h"
 #include "../../common/program_start.h"
+#include "../../common/silence.h"
 
 namespace {
 
 constexpr float kFs = 48000.f;
+// Below this the follower and the filter are at -180 dB: nothing left to keep.
+constexpr float kIdleFloor = 1e-9f;
+
 constexpr int kCoefUpdate = 32;
 
 // Small, libm free helpers: the 6 KB SRAM budget of a modfx unit does not
@@ -170,15 +174,36 @@ void MODFX_INIT(uint32_t platform, uint32_t api) {
   clearChannel(s.ch[1]);
 }
 
+// A channel handed digital silence with a closed gate has nothing to compute:
+// the follower sits at zero, the filter is empty and the output is zero.
+bool idleChannel(const float *xn, uint32_t frames, const Channel &c) {
+  if (c.env > kIdleFloor || fabsf(c.ic1) > kIdleFloor || fabsf(c.ic2) > kIdleFloor)
+    return false;
+  return silence::block(xn, frames);
+}
+
 void MODFX_PROCESS(const float *main_xn, float *main_yn, const float *sub_xn,
                    float *sub_yn, uint32_t frames) {
-  processChannel(main_xn, main_yn, frames, s.ch[0]);
+  const bool has_sub = sub_yn != main_yn && sub_xn != nullptr;
+  const bool main_idle = idleChannel(main_xn, frames, s.ch[0]);
+  const bool sub_idle = has_sub ? idleChannel(sub_xn, frames, s.ch[1]) : true;
+
+  if (main_idle)
+    for (uint32_t i = 0; i < frames; ++i)
+      main_yn[i] = 0.f;
+  else
+    processChannel(main_xn, main_yn, frames, s.ch[0]);
 
   // On the NTS-1 there is a single timbre; only touch the sub buffers when the
   // platform actually hands us a second one.
-  if (sub_yn != main_yn && sub_xn != nullptr) {
-    s.coef_counter = 1;
-    processChannel(sub_xn, sub_yn, frames, s.ch[1]);
+  if (has_sub) {
+    if (sub_idle)
+      for (uint32_t i = 0; i < frames; ++i)
+        sub_yn[i] = 0.f;
+    else {
+      s.coef_counter = 1;
+      processChannel(sub_xn, sub_yn, frames, s.ch[1]);
+    }
   }
 }
 

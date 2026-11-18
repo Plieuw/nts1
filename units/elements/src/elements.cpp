@@ -186,6 +186,36 @@ void updateCoefficients() {
   s.out_gain = 6.f * (1.f + 2.f * g);
 }
 
+// A bank that has rung down to the last floats would keep the FPU on its slow
+// denormal path; at -300 dB there is nothing left to keep. True when the bank
+// was down to nothing, which with a silent input means the channel is idle.
+bool settle(Channel &c) {
+  float mag = 0.f;
+  for (int n = 0; n < kModes; ++n)
+    mag += fabsf(c.y1[n]) + fabsf(c.y2[n]);
+  // -180 dB: inaudible, and low enough that an idle channel can be skipped
+  // rather than merely cleared.
+  if (mag < 1e-9f) {
+    clearChannel(c);
+    return true;
+  }
+  return false;
+}
+
+// Digital silence in, and nothing left in the bank: every term of the sum is
+// zero, so the output is zero and the work can be skipped. Not an
+// approximation, and on the instrument the second timbre is silent for most of
+// the time, which makes this the difference between one bank and two.
+bool idleChannel(const float *xn, uint32_t frames, Channel &c) {
+  const bool down = settle(c);
+  if (!down)
+    return false;
+  for (uint32_t i = 0; i < frames; ++i)
+    if (xn[i] != 0.f)
+      return false;
+  return true;
+}
+
 void processChannel(const float *xn, float *yn, uint32_t frames, Channel &c) {
   const int modes = s.active_modes;
   const float *const b0 = s.b0;
@@ -194,15 +224,7 @@ void processChannel(const float *xn, float *yn, uint32_t frames, Channel &c) {
   const float exc_coef = s.exc_coef;
   const float out_gain = s.out_gain;
 
-  // A bank that has rung down to the last floats would keep the FPU on its slow
-  // denormal path; at -300 dB there is nothing left to keep.
-  {
-    float mag = 0.f;
-    for (int n = 0; n < kModes; ++n)
-      mag += fabsf(c.y1[n]) + fabsf(c.y2[n]);
-    if (mag < 1e-15f)
-      clearChannel(c);
-  }
+  settle(c);
 
   for (uint32_t i = 0; i < frames; ++i) {
     const float raw = xn[i];
@@ -235,6 +257,66 @@ void processChannel(const float *xn, float *yn, uint32_t frames, Channel &c) {
   }
 }
 
+// Both timbres in one pass. The modal coefficients are shared by the two
+// channels, so they are loaded once per mode instead of once per channel — the
+// cheapest saving in the unit, and the per-channel arithmetic is the same three
+// terms in the same order, so the output does not move.
+void processBoth(const float *x0, float *y0, const float *x1, float *y1,
+                 uint32_t frames) {
+  Channel &c0 = s.ch[0];
+  Channel &c1 = s.ch[1];
+  const int modes = s.active_modes;
+  const float *const b0 = s.b0;
+  const float *const a1 = s.a1;
+  const float *const a2 = s.a2;
+  const float exc_coef = s.exc_coef;
+  const float out_gain = s.out_gain;
+
+  for (uint32_t i = 0; i < frames; ++i) {
+    const float r0 = x0[i];
+    const float r1 = x1[i];
+
+    c0.hp_y = 0.995f * (c0.hp_y + r0 - c0.hp_x);
+    c0.hp_x = r0;
+    c0.lp += (c0.hp_y - c0.lp) * exc_coef;
+
+    c1.hp_y = 0.995f * (c1.hp_y + r1 - c1.hp_x);
+    c1.hp_x = r1;
+    c1.lp += (c1.hp_y - c1.lp) * exc_coef;
+
+    const float e0 = c0.lp;
+    const float e1 = c1.lp;
+    float acc0 = 0.f;
+    float acc1 = 0.f;
+
+    for (int n = 0; n < modes; ++n) {
+      const float b = b0[n];
+      const float p = a1[n];
+      const float q = a2[n];
+      const float v0 = b * e0 + p * c0.y1[n] + q * c0.y2[n];
+      const float v1 = b * e1 + p * c1.y1[n] + q * c1.y2[n];
+      c0.y2[n] = c0.y1[n];
+      c0.y1[n] = v0;
+      acc0 += v0;
+      c1.y2[n] = c1.y1[n];
+      c1.y1[n] = v1;
+      acc1 += v1;
+    }
+
+    if (!(acc0 > -kBankLimit && acc0 < kBankLimit)) {
+      clearChannel(c0);
+      acc0 = 0.f;
+    }
+    if (!(acc1 > -kBankLimit && acc1 < kBankLimit)) {
+      clearChannel(c1);
+      acc1 = 0.f;
+    }
+
+    y0[i] = fx_softclipf(0.15f, acc0 * out_gain);
+    y1[i] = fx_softclipf(0.15f, acc1 * out_gain);
+  }
+}
+
 }  // namespace
 
 /*---------------------------------------------------------------------------*
@@ -257,9 +339,32 @@ void MODFX_INIT(uint32_t platform, uint32_t api) {
 
 void MODFX_PROCESS(const float *main_xn, float *main_yn, const float *sub_xn,
                    float *sub_yn, uint32_t frames) {
-  processChannel(main_xn, main_yn, frames, s.ch[0]);
+  const bool has_sub = sub_yn != main_yn && sub_xn != nullptr;
 
-  if (sub_yn != main_yn && sub_xn != nullptr)
+  // A channel handed digital silence with an empty bank has nothing to compute:
+  // every term of its sum is zero, so its output is written and the DSP is
+  // skipped. The instrument's second timbre is silent most of the time, which
+  // makes this one bank's worth of work instead of two.
+  const bool main_idle = idleChannel(main_xn, frames, s.ch[0]);
+  const bool sub_idle = has_sub ? idleChannel(sub_xn, frames, s.ch[1]) : true;
+
+  if (main_idle)
+    for (uint32_t i = 0; i < frames; ++i)
+      main_yn[i] = 0.f;
+  if (has_sub && sub_idle)
+    for (uint32_t i = 0; i < frames; ++i)
+      sub_yn[i] = 0.f;
+
+  if (main_idle && sub_idle)
+    return;
+
+  if (!main_idle && has_sub && !sub_idle) {
+    processBoth(main_xn, main_yn, sub_xn, sub_yn, frames);
+    return;
+  }
+  if (!main_idle)
+    processChannel(main_xn, main_yn, frames, s.ch[0]);
+  if (has_sub && !sub_idle)
     processChannel(sub_xn, sub_yn, frames, s.ch[1]);
 }
 
