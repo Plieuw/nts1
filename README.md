@@ -411,6 +411,13 @@ still writes the responses out as WAV files in [`ir/`](ir) through
 [`tools/make_irs.cpp`](tools/make_irs.cpp), and those files are what the unit's
 levels were measured against.
 
+Only the eighty five milliseconds of comb line that the tail stands in live in
+SDRAM. The two engines and the short delay lines are read and written once per
+sample, so they sit in SRAM instead: 4.3 KB of it, with the code, out of the 12
+KB the slot has. That is a placement, not a different sound — on the host the
+cost is the same before and after, and it is on the instrument that a sample
+would otherwise wait on SDRAM for its own state.
+
 A body ends when the sound does: the unit's own tail is 8 to 35 ms, so it is the
 one place here where a state left in the slot could be heard after the note. It
 cannot be: 20 ms of true digital silence closes the output over 10 ms and opens
@@ -547,7 +554,7 @@ effect slots are handed between notes.
 | `reso` | 2.1 KB | 0.4 KB | 28.6 → 22.3 ns (**-22%**) | 29.5 → 2.6 ns (**-91%**) |
 | `elements` | 2.6 KB | 0.4 KB | 39.2 → 16.3 ns (**-58%**) | 39.9 → 1.6 ns (**-96%**) |
 | `barber` | 1.9 KB | 0.3 KB | 33.7 → 33.9 ns | 34.0 → 2.4 ns (**-93%**) |
-| `irbody` | 5.2 KB | 52 KB SDRAM | 42.2 → 42.2 ns | 46.5 → 2.1 ns (**-95%**) |
+| `irbody` | 5.3 KB | 4.3 KB + 39 KB SDRAM | 42.2 → 42.2 ns | 46.5 → 2.1 ns (**-95%**) |
 
 Summed over one slot of each type — `bowed`, `elements`, `barber` and `irbody`,
 which is a full house on the mkI — that is 129 → 103 ns/frame while playing, and

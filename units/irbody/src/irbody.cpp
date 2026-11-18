@@ -54,7 +54,9 @@ constexpr float kPi = 3.14159265358979f;
 
 constexpr int kMaxModes = 11;   // the widest mode set in ir_model.h
 constexpr int kCombs = 4;
-constexpr int kCombMax = 1400;  // 29 ms at 48 kHz, the longest comb
+// The longest comb is the piano's tail at size 1.38: 15.7 ms * 1.38 = 21.7 ms,
+// so 1100 samples covers every preset and buildEngine's clamp never bites.
+constexpr int kCombMax = 1100;
 constexpr int kAp0Len = 240;    // 5.0 ms allpass
 constexpr int kAp1Len = 96;     // 2.0 ms allpass
 constexpr int kPresetCount = irmodel::kPresetCount;
@@ -85,12 +87,16 @@ constexpr float kApG = 0.6f;
 constexpr float kApG3 = 0.72f;
 constexpr float kApG4 = 0.4f;
 
-// The .sdram section is not zeroed at load time, so every buffer is cleared
-// explicitly before it is used.
+// Only the buffers that need to be big live in SDRAM: the eighty five
+// milliseconds of comb line the tail stands in. Every other line here is a few
+// hundred floats, and each of them is read and written once per sample, so they
+// stay in SRAM where a sample does not wait for them. The .sdram section is not
+// zeroed at load time, so the buffers in it are cleared explicitly in
+// clearBuffers; the .bss ones are zeroed by the loader and cleared anyway.
 float g_comb[2][kCombs][kCombMax] __sdram;
-float g_ap0[2][kAp0Len] __sdram;
-float g_ap1[2][kAp1Len] __sdram;
-float g_ap2[2][kAp1Len] __sdram;  // the side signal, so left and right differ
+float g_ap0[2][kAp0Len];
+float g_ap1[2][kAp1Len];
+float g_ap2[2][kAp1Len];  // the side signal, so left and right differ
 // A long allpass on that difference, mostly a delay with no echo of its own:
 // at a few millimetres of path the two ears get nearly the same signal, and it
 // takes a path of this order before the channels genuinely differ.
@@ -100,8 +106,8 @@ constexpr int kAp3Len = 449;  // 9.4 ms; the SRAM this slot has left is the limi
 // allpass keeps the level, so this widens the upper partials of every body
 // without putting a notch in the sum.
 constexpr int kAp4Len = 17;
-float g_ap3[2][kAp3Len] __sdram;
-float g_ap4[2][kAp4Len] __sdram;
+float g_ap3[2][kAp3Len] __sdram;  // 3.6 KB, the one line that had to stay there
+float g_ap4[2][kAp4Len];
 
 /*---------------------------------------------------------------------------*
  * One engine: the resonances of an object plus its tail
@@ -143,10 +149,10 @@ struct Engine {
   int ap2_pos;
 };
 
-// The engines are state, and this slot has 2.4 MB of SDRAM against 12 KB of
-// SRAM: keeping them there is what leaves room for the code. The section is not
+// The engines are state, not sound: 744 bytes for the pair, read and written
+// every sample, so they sit in SRAM with the lines above. The section is not
 // zeroed at load, so every field is written by clearEngine before it is read.
-Engine g_eng[2] __sdram;
+Engine g_eng[2];
 
 struct State {
   int active;   // engine slot in the output
@@ -164,7 +170,8 @@ struct State {
   int quiet;    // samples of true silence behind us
 };
 
-State s __sdram;
+State s;  // read every sample: gate, damping, the fade position
+
 
 void clearEngine(Engine &e) {
   for (int k = 0; k < kMaxModes; ++k) {
