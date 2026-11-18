@@ -39,6 +39,26 @@ constexpr float kFs = 48000.f;
 // The bank normally sums to well below one; anything past this is a runaway.
 constexpr float kBankLimit = 100.f;
 
+// The four geometries are single points on a continuum and a knob has no
+// detents, so landing on the membrane by hand is luck. Within 3% of the way
+// between two of them — ten counts of the knob — the knob snaps to the model
+// and the object is exact: string, membrane, plate, bell. Outside that band
+// nothing changes, the morph is what it was, and the bands are far apart they
+// never meet. Three percent of the knob's travel would swallow a quarter of it;
+// the measurement (tools/levels.cpp, one plucked note) put the step at such an
+// edge at up to 7.7 dB, while these ten counts cost about a decibel.
+constexpr float kSnap = 0.01f;
+
+inline float snapGeometry(float v) {
+  for (int i = 0; i <= 3; ++i) {
+    const float p = (float)i * (1.f / 3.f);
+    const float d = v - p;
+    if (d <= kSnap && d >= -kSnap)
+      return p;
+  }
+  return v;
+}
+
 // Small, libm free helpers: the 6 KB SRAM budget of a modfx unit does not
 // leave room for the full maths library.
 inline float pow2f(float x) {
@@ -394,7 +414,7 @@ void MODFX_PARAM(uint8_t index, int32_t value) {
     break;
 
   case k_user_modfx_param_depth:
-    s.geometry = v;
+    s.geometry = snapGeometry(v);
     break;
 
   default:

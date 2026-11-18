@@ -71,6 +71,19 @@ constexpr float kMaxModeTau = 0.022f;  // the guitar's mode decay, seconds
 constexpr float kMaxTailTau = 0.010f;  // and the decay of its diffuse tail
 constexpr int kAp1Len = 96;     // 2.0 ms allpass
 constexpr int kPresetCount = irmodel::kPresetCount;
+// The eight bodies are single points on the knob's travel and landing on one by
+// hand is luck. The quarter steps below already land on a body within 1.8% of
+// the travel; this band widens that to 3%, so on each side of a body there is a
+// stretch of knob where the body is exactly itself and the glide into its
+// neighbour has not started. Between the bands nothing changes. The cost is the
+// glide over those counts, measured at 1.6 dB at the largest body.
+constexpr float kBodySnap = 0.03f * (float)(kPresetCount - 1);
+
+inline float snapBody(float pos) {
+  const float nearest = (float)(int)(pos + 0.5f);
+  const float d = pos - nearest;
+  return (d <= kBodySnap && d >= -kBodySnap) ? nearest : pos;
+}
 constexpr int kFadeSamples = 4096;  // 85 ms crossfade on a switch
 // A body is not a reverb: its own tail is 8 to 22 ms. Twenty milliseconds of
 // true silence closes the gate over ten, so the slot cannot keep sounding after
@@ -645,7 +658,7 @@ void REVFX_PARAM(uint8_t index, int32_t value) {
                                   (float)value * (1.f / 1023.f) *
                                       (float)(kPresetCount - 1),
                                   (float)(kPresetCount - 1));
-    const float q = (float)((int)(pos * 4.f + 0.5f)) * 0.25f;
+    const float q = (float)((int)(snapBody(pos) * 4.f + 0.5f)) * 0.25f;
     if (q == s.pos)
       break;
 

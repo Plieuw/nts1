@@ -3,6 +3,29 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## snap to the model
+
+Four geometries on `elements` and eight bodies on `irbody` are single points on a
+knob with no detents, so landing on one by hand was luck and a hair off gave a
+blend of two objects. Both now hold exactly near each point:
+
+- `elements`: within 3% of the way between two geometries — ten counts of the B
+  knob — the geometry snaps to that model, so 0, 341, 682 and 1023 are exactly
+  the string, the membrane, the plate and the bell. Ten counts and not 3% of the
+  knob because the step at the edge of the band is the morph the band swallows:
+  over the whole B sweep these ten counts move 60 of 1024 positions, by up to
+  7.2 dB at 220 Hz (a note on a mode, where the morph is steepest) and about a
+  decibel elsewhere, while 31 counts would have covered a quarter of the travel
+  at up to 7.7 dB.
+- `irbody`: each body is exact for 3% of the A knob on either side of it, ±31
+  counts instead of the ±18 the quarter step already gave, so the glide into the
+  next body has not started near one. Over the whole A sweep that moves 174 of
+  1024 positions, by at most 1.65 dB.
+- Everywhere else both knobs are bit-identical to before: the between positions
+  of the morph did not change in either unit.
+
+Versions: `elements` 1.6-0, `irbody` 1.11-0.
+
 ## levels — the SDK's reference
 
 A patch should not jump when the unit changes, and two of these did: `elements`

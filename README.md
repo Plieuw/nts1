@@ -341,6 +341,16 @@ It is an independent implementation inspired by the resonators of Mutable
 Instruments Elements, not a port: a modulation effect on the NTS-1 gets two
 knobs and no note information, so the pitch is set by hand here.
 
+Four points on the B knob are the four objects themselves: 0, 341, 682 and 1023.
+Within 3% of the way between two of them — ten counts — the knob snaps to the
+nearest model, so the membrane can be found by hand and is exactly the membrane,
+and outside that band the morph is untouched. Ten counts, not 3% of the knob: the
+step at the edge of a band is the morph the band swallows, and over the whole B
+sweep the ten counts move 60 of 1024 positions by up to 7.2 dB at 220 Hz (a note
+sitting on a mode, where the morph is steepest) and by about a decibel elsewhere;
+31 counts, a quarter of the knob's morph, would have swallowed a quarter of the
+travel at up to 7.7 dB.
+
 The instrument is mono, so this unit renders one bank. The slot is handed a main
 and a sub buffer, but an instrument with one oscillator has one signal, and the
 SDK says a platform without a sub timbre may ignore the sub buffers; a host that
@@ -404,6 +414,11 @@ can be walked into a cello instead of jumping. The mode ratios stay with the
 nearest body, because half of one body's partials with half of another's is
 neither. Levels are fitted per body (measured on the host, within 4 dB over the
 whole travel) so turning the knob does not change how loud you are.
+
+Each body also holds exactly for 3% of the knob on either side of it (±31 counts)
+instead of only inside the quarter step it lands on (±18), so the glide into the
+next body has not started yet when you are near one. Over the whole A sweep that
+band moves 174 of 1024 positions, by at most 1.65 dB.
 
 ### irbody — reverb effect (instrument bodies)
 
