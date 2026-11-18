@@ -515,6 +515,32 @@ them would buy idle cycles nothing needs. The one place the budget is real is
 memory in the oscillator slot: `bowed` keeps one delay loop of 1024 samples and
 `resonator` one bank of modes, 4 KB and 0.4 KB of the 32 KB they get.
 
+### Levels
+
+A patch should not jump when the unit changes, so the levels are fitted to the
+SDK's own reference rather than to each other. `tools/levels.cpp` is the
+measurement: it takes the same `--ranges` as the harness, and `--pluck` plays
+one note with a decay, which is what a body, a gate and a resonator answer,
+instead of the forty eight simultaneous tones the goldens use.
+
+* **An oscillator at `Level` 100 peaks at full scale.** That is what the SDK's
+  own demo does: `waves` writes its wavetable straight to the output, peak 1.0,
+  with a soft clip of 0.125 on top. Measured at note 60: `noise` 0.90,
+  `bowed` 0.82, `resonator` 0.90. `resonator` used to peak at 0.53 — it was
+  fitted when it was polyphonic, at a quarter of the level knob. `bowed` was
+  already at the top: at 100 its mix sits in its own soft clip, which is why its
+  RMS (0.69) is above a full-scale sine and why raising its trim there only
+  added distortion.
+* **An effect leaves the level of a dry note where it found it**, at the middle
+  of its knobs. With one plucked note: `lpg` +0.4 dB, `reso` +1.1, `barber`
+  +0.8, `elements` −0.0 and `irbody` +0.8. `elements` was 9.8 dB down and
+  `irbody` 17.3 dB up — the body sat on top of the note and clipped it on every
+  pluck, where a reverb should sit behind it.
+
+The `waves` demo itself does not build against the host stand-in (its `dsp`
+headers want the ARM SDK's own float helpers), so the reference is read from its
+source: the table at full scale and no gain on the way out.
+
 ### What each unit promises its slot
 
 The point of the list below is that you can drop any of them next to anything

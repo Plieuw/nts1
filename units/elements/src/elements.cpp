@@ -196,7 +196,11 @@ void updateCoefficients() {
   // A stiff mallet on a string is brighter than a soft one on a plate.
   const float exc_fc = 700.f * pow2f(1.6f * (3.f - g));
   s.exc_coef = 1.f - expNegSmall(6.2831853f * clipminmaxf(200.f, exc_fc, 12000.f) / kFs);
-  s.out_gain = 6.f * (1.f + 2.f * g);
+  // Unity: a modulation effect should not change the level of what passes
+  // through it. At the middle of the knob this bank was 10 dB below the note it
+  // was handed, which is what the 18.6 is: the measured gain, with the same
+  // 6 * (1 + 2g) shape over the geometry. tools/levels.cpp --pluck.
+  s.out_gain = 18.6f * (1.f + 2.f * g);
 }
 
 // A bank that has rung down to the last floats would keep the FPU on its slow

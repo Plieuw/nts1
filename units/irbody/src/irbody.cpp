@@ -246,6 +246,13 @@ struct Trim {
 };
 
 
+// The body's wet path is a network that rings, not a filter that passes: at the
+// middle of the knobs it came out 17 dB above the note it was handed, and with
+// the soft clip doing the limiting on every note. A reverb slot is unity at the
+// middle of its dry/wet, like the stock ones, so the whole wet path is trimmed
+// by this. tools/levels.cpp --pluck, one note at A/B in the middle.
+constexpr float kOutTrim = 0.043f;
+
 // Measured on the host: the RMS each body settles at for the same input, in
 // dB against the loudest of them. Without these the knob jumps by up to 9 dB
 // between bodies (steel is the quiet one), and the crossfade would not hide it.
@@ -361,7 +368,7 @@ void buildEngine(int slot, float pos) {
   const float tail_lp = 900.f + 2600.f * bright;
   e.tail.tail_out_cut = 1.f - arc_expneg(2.f * kPi * tail_lp / kFs);
 
-  e.tail.level = level;
+  e.tail.level = level * kOutTrim;
 }
 
 /*---------------------------------------------------------------------------*

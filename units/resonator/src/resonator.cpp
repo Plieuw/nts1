@@ -79,8 +79,10 @@ constexpr float kBankLimit = 100.f;
 // with about L times this per mode, so it is small on purpose.
 constexpr float kStrikeGain = 0.0018f;
 
-// The attack of a note peaks at about this, before the level knob.
-constexpr float kOutSum = 0.008f;
+// The attack of a note peaks at about this, before the level knob. It was fitted
+// when this unit was polyphonic and a quarter of the level knob; full scale at
+// Level 100 now, which is 5 dB louder and where the SDK's own oscillator peaks.
+constexpr float kOutSum = 0.0144f;
 
 // How long a released key takes to be gone. This is not an envelope: the amp EG
 // of the synth owns the tail, so the unit only has to get out of its way — fast

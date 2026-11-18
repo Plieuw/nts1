@@ -3,6 +3,33 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## levels — the SDK's reference
+
+A patch should not jump when the unit changes, and two of these did: `elements`
+was 10 dB quieter than the note it was handed and `irbody` 17 dB louder, with
+its soft clip doing the limiting on every note.
+
+- An oscillator at `Level` 100 peaks at full scale, which is what the SDK's own
+  `waves` demo does — it writes its wavetable straight out at peak 1.0. Measured
+  at note 60 with the new `tools/levels.cpp`: `noise` 0.90, `bowed` 0.82,
+  `resonator` 0.90. `resonator` used to peak at 0.53, because it was fitted when
+  it was polyphonic and sat at a quarter of the level knob: `kOutSum` 0.008 →
+  0.0144, +5.1 dB. `bowed` was already there — at 100 its mix sits in its own
+  soft clip, so raising the trim only added distortion, and it did not move.
+- An effect is unity at the middle of its knobs, measured with one plucked note:
+  `lpg` +0.4 dB, `reso` +1.1 and `barber` +0.8 were already there; `elements`
+  was 9.8 dB down (`out_gain` 6 → 18.6, mid knobs now −0.0 dB) and `irbody` was
+  17.3 dB up (`kOutTrim` 0.043 on the wet path, mid knobs now +0.8 dB). The
+  body's band-to-band fit is untouched: the trim is one number on the whole wet
+  path.
+- `tools/levels.cpp` is how it was measured and how a future change can be
+  checked: the same `--ranges` as the harness, RMS and peak for an oscillator,
+  in against out for an effect, and `--pluck` for a single note.
+
+The goldens for `resonator`, `elements` and `irbody` moved by exactly that.
+
+Versions: `resonator` 1.10-0, `elements` 1.5-0, `irbody` 1.10-0.
+
 ## irbody — one tail
 
 The unit was down to two comb lines and still the most expensive thing here, and
