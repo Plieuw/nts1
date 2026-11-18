@@ -11,7 +11,7 @@ stock effects so a problem cannot come from a neighbour.
 
 ## 1. Does every unit fit and run cleanly?
 
-For each of the eight units: play a chord, hold it, move every knob across its
+For each of the eight units: play a note, hold it, move every knob across its
 full range, then release. Before touching anything, hold one note with the unit
 just installed: it has to sound at once, on its own start values. A fresh
 program sends zero for every parameter, and zero is silence — a unit that is
@@ -30,17 +30,18 @@ and not ring on under it. `resonator` with A fully open is the test — a bowl o
 gong holds more than half a minute of energy at that setting, so a unit that keeps
 a tail of its own is heard at once as a note that outlives the key.
 
-The two units to watch are `bowed` with four notes held (16 KB of delay memory
-and four voices) and `irbody` while the A knob is being turned (a body change
-runs an 85 ms crossfade from the other engine slot).
+The two units to watch are `bowed` while a note is held with the bow hard down
+(4 KB of delay memory, and the only one here with a delay loop) and `irbody`
+while the A knob is being turned (a body change runs an 85 ms crossfade from the
+other engine slot).
 
 ## 2. Does the crossfade and preset switching survive?
 
 * `irbody`: hold a chord, turn A slowly from one end to the other and back. The
   body should walk, not jump, and the level should stay put (the host fit holds
   it within 4 dB).
-* `resonator`: change `Model` while a note rings. Every voice is re-landed onto
-  the new bank; the note should keep its pitch and change object under it.
+* `resonator`: change `Model` while a note rings. The voice is re-landed onto the
+  new bank; the note should keep its pitch and change object under it.
 * `barber`: turn the rate knob while a chord rings, and stop the LFO by holding
   it at one end. No zipper, no pitch shift of the dry signal.
 

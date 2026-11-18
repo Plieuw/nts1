@@ -15,7 +15,7 @@ the display unless noted.
 | glass | thin, brittle, long upper band | `Strike` 75, B 80 | high, glassy arpeggios |
 | marimba | wooden bar with a tuned second mode | `Strike` 45, `Pos` 40 | mallet melodies |
 | xylophone | brighter and shorter than marimba | `Strike` 60, `Pos` 30 | fast, dry lines |
-| vibraphone | long, soft, even partials | `Strike` 25, B 45 | chords that bloom |
+| vibraphone | long, soft, even partials | `Strike` 25, B 45 | long notes that bloom |
 | piano | stretched partials, dies from the top | `Strike` 55, `Damp` 35 | pads with a keyboard feel |
 | steel drum | two strong modes, a bright skirt | `Strike` 65, `Pos` 20 | Caribbean melody |
 | gong | very long, inharmonic, low | `A` high (long), `Strike` 40 | single hits that keep going |

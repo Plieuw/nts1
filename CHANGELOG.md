@@ -3,6 +3,34 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## all three oscillators — mono
+
+The NTS-1 is monophonic: one note at a time, whether it comes from the keys, the
+arpeggiator or the sequencer. `bowed` and `resonator` kept four voices each —
+16 KB of delay loops and 1.5 KB of banks in slots that may never hold a second
+note — and walked all four of them every frame. Both play one voice now.
+
+- A new note strikes the same voice: `bowed` resets its loop and bows it,
+  `resonator` re-lands its bank over the ringing one. The voice allocator, the
+  age counter it stole by and the mix that tucked extra notes under the first
+  are gone.
+- A single note sounds exactly as it did, sample for sample: the mix keeps the
+  quarter it was normalised by when four voices could sum, and `tests/run.sh`
+  passes against untouched goldens. `bowed` measures 14.1 → 10.2 ns per frame
+  playing and 7.3 → 1.6 idle; `resonator` 31.9 → 27.0 and 1.4 → 0.4 (host, five
+  alternating passes, minimum, the four voice build run in the same session).
+- `bowed` holds one delay loop of 1024 samples (4 KB) instead of four (16 KB), and
+  `resonator` one bank of modes (0.4 KB of SRAM instead of 1.5).
+- `noise` was already a single generator and is unchanged.
+
+The ARM build prices `bowed`'s audio loop at 216 cycles per frame, 230 with the
+`bowNoise` call it makes per sample. The four voice version measured 777 for one
+active voice and three idle ones: 6% of a 1.333 ms block on the 180 MHz core now,
+a fifth before. The two counts come from different gcc versions (5.4 then, 10.3
+here), which does not change the direction of it.
+
+Versions: `bowed` 1.5-0, `resonator` 1.9-0. `noise` keeps its.
+
 ## all eight units — cost
 
 Four slots run at once, so their cost adds up: one oscillator, one modulation

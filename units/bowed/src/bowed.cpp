@@ -7,7 +7,9 @@
 // amp EG of the NTS-1 sits after the oscillator slot and owns the tail, so the
 // unit must not hold one of its own, or the release knob would be fighting a
 // string that keeps ringing under it.
-// Four voices, because a chord of sustained notes is the point.
+// One voice: the NTS-1 is monophonic, so there is never a second note to give a
+// second delay loop to. A new key takes the loop, which is what a bow does to a
+// string anyway.
 //
 // The API is the oscillator one, so the knobs are the six parameters in
 // manifest.json (A and B are shape and shift-shape, as on every osc unit).
@@ -21,8 +23,12 @@
 
 namespace {
 
-constexpr int kVoices = 4;
 constexpr int kModelCount = 5;
+
+// The polyphonic version normalised its mix by four, so one note sat at a
+// quarter of the level knob. Mono keeps that trim, or every patch would be
+// 12 dB louder than it was.
+constexpr float kMixTrim = 0.25f;
 constexpr int kMaxPeriod = 1024;      // 47 Hz at 48 kHz
 constexpr float kFs = 48000.f;
 constexpr float kPi = 3.14159265358979f;
@@ -71,8 +77,7 @@ struct Voice {
 };
 
 struct State {
-  Voice voice[kVoices];
-  int   next;       // round robin
+  Voice voice;
   int   model;
   float pressure;   // 0..1, the bow, as the loop sees it
   float pressure_base;  // the knob, before the LFO reaches it
@@ -155,8 +160,7 @@ inline float loopRead(const Voice &v) {
 }
 
 void strike(int note, float fine) {
-  Voice &v = s.voice[s.next];
-  s.next = (s.next + 1) % kVoices;
+  Voice &v = s.voice;
   resetVoice(v);
   const float n = (float)note + fine + s.tune;
   setPeriod(v, 440.f * arc_pow2f((n - 69.f) * (1.f / 12.f)));
@@ -182,7 +186,6 @@ void OSC_INIT(uint32_t platform, uint32_t api) {
   program_start::reset();
   (void)platform;
   (void)api;
-  s.next = 0;
   s.model = 0;
   s.pressure = 0.55f;
   s.rosin = 0.5f;
@@ -195,8 +198,7 @@ void OSC_INIT(uint32_t platform, uint32_t api) {
   s.lfo = 0.f;
   s.rel_coef = 1.f - arc_pow2f(-1.f / (kReleaseTau * kFs) * 6.9f);
   updateBody();
-  for (int i = 0; i < kVoices; ++i)
-    resetVoice(s.voice[i]);
+  resetVoice(s.voice);
 }
 
 void OSC_CYCLE(const user_osc_param_t *const params, int32_t *yn,
@@ -219,13 +221,14 @@ void OSC_CYCLE(const user_osc_param_t *const params, int32_t *yn,
 
   q31_t *__restrict y = (q31_t *)yn;
 
+  // One voice, so this loop is the whole unit. A note that is not held and whose
+  // bow has left writes nothing, and the output stays at zero.
+  Voice &v = s.voice;
+
   for (uint32_t i = 0; i < frames; ++i) {
     float mix = 0.f;
 
-    for (int vi = 0; vi < kVoices; ++vi) {
-      Voice &v = s.voice[vi];
-      if (!v.held && v.env < 1e-4f)
-        continue;
+    if (v.held || v.env >= 1e-4f) {
 
       // The bow: pressure comes up over the attack, and when the key comes up
       // the bow leaves at once. The loop would hold the note for seconds, but
@@ -276,7 +279,7 @@ void OSC_CYCLE(const user_osc_param_t *const params, int32_t *yn,
       mix += in * (1.f - m.body_mix) + (y1 + y2) * m.body_mix;
     }
 
-    mix *= s.level * (1.f / (float)kVoices);
+    mix *= s.level * kMixTrim;
     y[i] = f32_to_q31(clipminmaxf(-1.f, osc_softclipf(0.18f, mix), 1.f));
   }
 }
@@ -287,20 +290,17 @@ void OSC_NOTEON(const user_osc_param_t *const params) {
   strike(note, fine);
 }
 
-// The oscillator API says which note was released, but the first version of this
-// unit never kept the pitch of a voice, so any release lets the whole chord go.
-// That is the one thing about four voices that a single bowed note cannot show.
-// Either way the bow leaves immediately: the tail belongs to the amp EG.
+// One note, so a release always ends the note that is sounding; on a mono synth
+// the key that comes up is that key. The bow leaves immediately: the tail
+// belongs to the amp EG.
 void OSC_NOTEOFF(const user_osc_param_t *const params) {
   (void)params;
-  for (int i = 0; i < kVoices; ++i)
-    s.voice[i].held = false;
+  s.voice.held = false;
 }
 
 void OSC_MUTE(const user_osc_param_t *const params) {
   (void)params;
-  for (int i = 0; i < kVoices; ++i)
-    resetVoice(s.voice[i]);
+  resetVoice(s.voice);
 }
 
 void OSC_PARAM(uint16_t index, uint16_t value) {

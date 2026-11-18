@@ -39,8 +39,8 @@ space model in the reverb slot — a unit for every user slot the instrument has
 | Unit | Slot | What it does | File |
 | --- | --- | --- | --- |
 | `noise` | OSC | Eight noise algorithms, from white to tuned resonance | `noise.ntkdigunit` |
-| `resonator` | OSC | 17 model modal resonator, four voices, played from the keyboard | `resonator.ntkdigunit` |
-| `bowed` | OSC | Bowed string, four voices, sustains while the key is down | `bowed.ntkdigunit` |
+| `resonator` | OSC | 17 model modal resonator, played from the keyboard | `resonator.ntkdigunit` |
+| `bowed` | OSC | Bowed string, sustains while the key is down | `bowed.ntkdigunit` |
 | `lpg` | MOD | Vactrol style low pass gate driven by an envelope follower | `lpg.ntkdigunit` |
 | `reso` | MOD | Twelve mode resonator with beating pairs, Rings in spirit | `reso.ntkdigunit` |
 | `elements` | MOD | Geometry morphing resonator: string, membrane, plate, bell | `elements.ntkdigunit` |
@@ -213,17 +213,14 @@ middle and at the end. The attack is normalised over the sum of the modes and
 over the keyboard — the measured 7:1 spread between the bottom and the top of the
 range comes down to about 1.1:1 — so one note is as loud as the next.
 
-Four voices: the oscillator slot hands out note-on and note-off, so a new note
-takes a free voice instead of cutting off the note before it. A released key ends
-the note: the voice fades out in about 4 ms and the amp EG of the NTS-1 takes the
-tail from there, so the release knob is the release, and the knob cannot be lied
-to by a bank that rings for half a minute underneath it. A fifth note steals the
-voice whose fade is furthest along, then the one that has rung longest.
-Each voice keeps the pitch it was struck at — a struck object does not glide —
-except the newest one, which follows the keyboard and the tune knob so a solo line
-still bends; a note that jumps far enough to put a bank into a runaway drops that
-bank instead of passing a NaN on. Four notes at once are not four times as loud:
-a single voice keeps its level and the rest are tucked in under it.
+One voice, because the NTS-1 is monophonic: one note sounds at a time, so a new
+note takes the bank and there is no second note for a second voice to hold. The
+voice keeps the pitch it was struck at — a struck object does not glide — and
+follows the keyboard and the tune knob, so a solo line still bends; a note that
+jumps far enough to put the bank into a runaway drops it instead of passing a NaN
+on. A released key ends the note: the voice fades out in about 4 ms and the amp EG
+of the NTS-1 takes the tail from there, so the release knob is the release, and
+the knob cannot be lied to by a bank that rings for half a minute underneath it.
 
 ### bowed — oscillator (a sustained note)
 
@@ -231,8 +228,9 @@ Everything else here answers a hit. `bowed` is the one that keeps going: a delay
 loop of one period is rubbed by a bow of filtered noise plus one small push per
 period, and the loop's losses decide how long the note takes to speak. When the
 key comes up the bow leaves at once, whatever the Attack knob is set to, because
-the amp EG of the NTS-1 comes after this slot and owns the tail. Four voices,
-because a chord of sustained notes is the point.
+the amp EG of the NTS-1 comes after this slot and owns the tail. One voice: the
+NTS-1 plays one note at a time, so a new key takes the delay loop and the note
+before it is over, which is what a bow does to a string anyway.
 
 | Control | Function |
 | --- | --- |
@@ -257,43 +255,44 @@ frequency. The push per period is a pulse now, and a one pole at 12 Hz takes DC
 out of the loop itself; a played C4 measures 262 Hz against the 261.6 it should
 be. **Sustain:** with the key down the level settles and stays (measured over two
 seconds), and after the key comes up it falls to nothing within two seconds.
-**Size:** four delay loops of 1024 samples is 16 KB, which is the largest
-allocation in this collection and still fits the oscillator slot's 32 KB.
+**Size:** one delay loop of 1024 samples is 4 KB, a quarter of what the polyphonic
+version held and still the largest allocation in this collection.
 
-**Cost, on the M4.** Four voices take 777 cycles per frame and one takes 300, so
-a 64 frame block — 1.333 ms — is 276 us of the 180 MHz core, a fifth of it:
+**Cost, on the M4.** The audio loop prices at 216 cycles per frame, plus the 14
+of the `bowNoise` call it makes per sample: about 230, so a 64 frame block —
+1.333 ms — is 82 us of the 180 MHz core, 6% of it. The polyphonic version was 777
+for four voices (one active and three idle); those three are gone, and the loop
+no longer walks a voice array at all. That 777 was counted from the gcc 5.4 image
+CI builds and this 230 from the gcc 10.3 build of this change in a sandbox, so the
+two are the same method but not the same compiler.
 
 ```
                        cycles/frame   per block   of the 1.333 ms block
-one voice                      300      19 232     107 us   8%
-two voices                     459      29 408     163 us  12%
-three voices                   618      39 584     220 us  17%
-four voices                    777      49 760     276 us  21%
+mono loop                      216      13 824      77 us   5.8%
+with bowNoise                   230      14 720      82 us   6.1%
 ```
 
-Those are counted from the image the instrument gets, not from a PC: the audio
-loop of the gcc 5.4 build is disassembled and priced instruction by instruction
-with the Cortex-M4's timings (1 cycle for the ALU and the single-precision FPU,
-2 for a load or store, 3 for a call and a taken branch), one active voice plus
-three idle ones, including the `bowNoise` call it makes per voice per sample.
-`tools/cycles.py` does the arithmetic and prints the ranges; the model is written
-into its header. Two things it cannot know: the clock (the F446 tops out at
-180 MHz, KORG does not publish the figure, and at 168 MHz the same block is 22%)
-and the pipeline (an M4 can issue a following instruction while a load settles,
-so summing over loads is an upper bound). Neither changes the answer: it fits,
-with four fifths of the block left for the rest of the synth.
+Those are counted from the image, not from a PC: the audio loop is disassembled
+and priced instruction by instruction with the Cortex-M4's timings (1 cycle for
+the ALU and the single-precision FPU, 2 for a load or store, 3 for a call and a
+taken branch). `tools/cycles.py` does the arithmetic and prints the ranges; the
+model is written into its header. Two things it cannot know: the clock (the F446
+tops out at 180 MHz, KORG does not publish the figure, and at 168 MHz the same
+block is 7%) and the pipeline (an M4 can issue a following instruction while a
+load settles, so summing over loads is an upper bound). Neither changes the
+answer: it fits, with almost all of the block left for the rest of the synth.
 
-The same loop on this host measures 40 ns per frame, a hundred times less, and
-that is not a mistake: a 3.5 GHz out-of-order core with a dual-issue FPU really
-is that far from 180 MHz in order. It is why the table below is a comparison
-between units and this number is a promise about the instrument.
+The same loop on this host measures 10 ns per frame, a hundred and thirty times
+less in wall time, and that is not a mistake: a 3.5 GHz out-of-order core with a dual-issue FPU really is that
+far from 180 MHz in order. It is why the table below is a comparison between
+units and this number is a promise about the instrument.
 
-That 777 used to be worse in a way nobody could hear: the body's two resonators
+The cycle count used to be worse in a way nobody could hear: the body's two resonators
 worked their coefficients out per sample with `cosf`, twice per voice, and `cosf`
 also pulled newlib's sine kernels into the image. They are calculated once when
 the model changes now: `nm -u` on the unit file lists nothing at all.
 
-Note-on costs 1.7 us per voice, and most of that is the noise the note starts
+Note-on costs 1.7 us, and most of that is the noise the note starts
 from. It is worth knowing what that does and does not allow: the unit used to
 zero the delay line before filling it, which was a second pass over 4 KB for
 nothing (the fill overwrites all of it anyway) and worth 3% of the note-on. What
@@ -466,17 +465,17 @@ stock type.
 ### What the numbers mean in a frame
 
 One block is 64 frames at 48 kHz: 1.333 ms. The most expensive unit here,
-`barber`, asks for 45 ns of host time per frame, which is 2.9 µs of a 1333 µs
-block, or 0.2%. `bowed` with four voices is 79 ns/frame, `resonator` with four
-is 71. The Cortex-M4F in the NTS-1 runs at 168 MHz and has a single precision
+`barber`, asks for 34 ns of host time per frame, which is 2.2 µs of a 1333 µs
+block, or 0.16%. `bowed` is 10 ns/frame, `resonator` 27. The Cortex-M4F in the
+NTS-1 runs at 168 MHz and has a single precision
 FPU, so the same code there costs several times what it costs on a desktop core;
 even at eight times the host, the heaviest unit is around 2% of a block.
 
 Which is why nothing here is optimised for speed at the cost of the sound: the
 eight allpass stages of `barber` are what make its sweep a sweep, and cutting
 them would buy idle cycles nothing needs. The one place the budget is real is
-memory in the oscillator slot: `bowed` keeps four delay loops of 1024 samples,
-16 KB of the 32 KB it gets.
+memory in the oscillator slot: `bowed` keeps one delay loop of 1024 samples and
+`resonator` one bank of modes, 4 KB and 0.4 KB of the 32 KB they get.
 
 ### What each unit promises its slot
 
@@ -534,20 +533,20 @@ effect slots are handed between notes.
 
 | Unit | Text + data | SRAM | Busy | Idle |
 | --- | --- | --- | --- | --- |
-| `noise` | 5.8 KB | 0.4 KB | 8.5 → 8.7 ns/frame (unchanged) | 8.5 → 8.3 ns |
-| `resonator` | 5.3 KB | 1.5 KB | 31.8 → 28.7 ns (**-10%**) | 1.4 → 1.7 ns |
-| `bowed` | 2.8 KB | 16.3 KB | 14.0 → 14.0 ns | 7.1 → 7.1 ns |
-| `lpg` | 1.7 KB | 0.1 KB | 21.0 → 20.9 ns | 21.1 → 2.6 ns (**-88%**) |
-| `reso` | 2.1 KB | 0.4 KB | 29.1 → 22.3 ns (**-24%**) | 29.8 → 2.6 ns (**-91%**) |
-| `elements` | 2.7 KB | 0.7 KB | 39.0 → 30.1 ns (**-23%**) | 40.0 → 2.5 ns (**-94%**) |
-| `barber` | 1.9 KB | 0.3 KB | 33.7 → 33.7 ns | 33.9 → 3.0 ns (**-91%**) |
-| `irbody` | 5.2 KB | 52 KB SDRAM | 42.3 → 42.2 ns | 46.3 → 2.7 ns (**-94%**) |
+| `noise` | 5.8 KB | 0.4 KB | 8.6 → 8.9 ns/frame (unchanged) | 8.4 → 8.4 ns |
+| `resonator` | 5.0 KB | 0.4 KB | 31.9 → 27.0 ns (**-15%**) | 1.4 → 0.4 ns (**-69%**) |
+| `bowed` | 2.7 KB | 4.1 KB | 14.1 → 10.2 ns (**-27%**) | 7.3 → 1.6 ns (**-78%**) |
+| `lpg` | 1.7 KB | 0.1 KB | 21.0 → 21.0 ns | 21.1 → 2.1 ns (**-90%**) |
+| `reso` | 2.1 KB | 0.4 KB | 28.6 → 22.3 ns (**-22%**) | 29.5 → 2.6 ns (**-91%**) |
+| `elements` | 2.7 KB | 0.7 KB | 39.2 → 30.2 ns (**-23%**) | 39.9 → 2.5 ns (**-94%**) |
+| `barber` | 1.9 KB | 0.3 KB | 33.7 → 33.9 ns | 34.0 → 2.4 ns (**-93%**) |
+| `irbody` | 5.2 KB | 52 KB SDRAM | 42.2 → 42.2 ns | 46.5 → 2.1 ns (**-95%**) |
 
-Summed over one slot of each type — an oscillator, a modulation effect, the delay
-and the reverb — that is 129 → 105 ns/frame while playing, and 103 → 9.9 ns/frame
-with the instrument idle. Which slot types run at once is the difference the
-instrument hears: four slots together were doing a fifth more work than they do
-now, and between notes almost none.
+Summed over one slot of each type — `bowed`, `elements`, `barber` and `irbody`,
+which is a full house on the mkI — that is 129 → 117 ns/frame while playing, and
+128 → 8.6 ns/frame with the instrument idle. Which slot types run at once is the
+difference the instrument hears: four slots together used to do the same work
+whether or not a note was sounding, and between notes now almost none.
 
 What was done, and why the sound does not move:
 
@@ -570,9 +569,10 @@ What was done, and why the sound does not move:
 * The state guards that keep a bank off the FPU's denormal path now trigger at
   -180 dB instead of -300 dB, which is what lets an idle channel be skipped
   rather than merely cleared.
-* `noise` and `bowed` are unchanged and were the cheap ones already: a noise
-  source has to render every frame, and `bowed`'s four voices are skipped when
-  they are idle, so there is nothing to take out without changing the sound.
+* `noise` is unchanged and was the cheap one already: a noise source has to
+  render every frame. `bowed` and `resonator` are one voice instead of four,
+  because the NTS-1 plays one note at a time: no voice loop, no voice
+  allocation, and an idle note cannot cost anything when it does not exist.
 
 ## Installing on the NTS-1
 

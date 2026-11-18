@@ -6,7 +6,7 @@
  * The modulation slot has `elements`, which is the same idea with the pitch set
  * by hand, because a modulation effect gets two knobs and no note. This is the
  * same engine in the oscillator slot, where the note number is available: 17
- * models, four voices, played from the keyboard.
+ * models, one voice, played from the keyboard.
  *
  * The models are the objects the other units imitate. A model is a ratio set
  * plus the way that object behaves under the knobs: how long it rings, how fast
@@ -38,18 +38,17 @@
  * can miss), and the modes ring out with the high ones dying faster than the
  * low ones unless the brightness knob says otherwise.
  *
- * Four voices, because the oscillator API hands out note-on and note-off: a new
- * note takes a free voice instead of cutting off the note before it, and the
- * fifth note steals the oldest. A voice keeps the pitch it was struck at — a
- * struck object does not glide — except for the newest one, which follows the
- * keyboard so a solo line still bends.
+ * One voice, because the NTS-1 is monophonic: one note sounds at a time, so a
+ * new note takes the bank and there is no chord this slot could be asked for.
+ * The voice keeps the pitch it was struck at — a struck object does not glide —
+ * and follows the keyboard, so a solo line still bends.
  *
  * A released key ends the note. The object rings for as long as the key is down
  * and then fades out in a few milliseconds, because the amp EG of the NTS-1 sits
  * after the oscillator slot: its release knob is the tail the player asked for,
  * and a bank that kept ringing under it would make that knob a lie. The bank of
  * a long model can hold energy for half a minute at the top of the A knob, so
- * without this the notes of a chord would pile up on top of the next ones.
+ * without this a new note would be struck into the ring of the one before it.
  *
  * A-knob (SHAPE)   decay, 0.1 s .. 12 s
  * B-knob (SHIFT)   brightness: how long the high modes live, and how open the
@@ -71,7 +70,6 @@ namespace {
 
 constexpr int kModes = 16;
 constexpr int kModels = 17;
-constexpr int kVoices = 4;
 constexpr float kFs = 48000.f;
 
 // The bank normally sums to well below one; anything past this is a runaway.
@@ -258,7 +256,6 @@ struct Voice {
   float out_gain;
   int modes;     // modes below Nyquist, the rest is silent
   int note_id;   // key that started it, 0..127
-  uint32_t age;  // larger is older, for stealing
   bool held;     // key still down
   float rel;     // 1 while held, then the fade of a released key
 
@@ -282,8 +279,7 @@ struct State {
   float level;    // 0..1
   float tune;     // semitones
 
-  Voice voice[kVoices];
-  uint32_t age;
+  Voice voice;
   uint32_t rng;
   float rel_coef;  // per sample decay of a released key's fade
 };
@@ -300,14 +296,12 @@ void clearBank(Voice &v) {
 }
 
 void silenceAll() {
-  for (int i = 0; i < kVoices; ++i) {
-    clearBank(s.voice[i]);
-    s.voice[i].held = false;
-  }
+  clearBank(s.voice);
+  s.voice.held = false;
 }
 
-// Whether a voice has anything left to say. A silent voice costs nothing: the
-// render loop skips it, which is what keeps four voices affordable.
+// Whether the voice has anything left to say. A silent voice costs nothing: the
+// render loop writes zeros and returns.
 bool voiceQuiet(const Voice &v) {
   if (v.exc_env > 1e-7f)
     return false;
@@ -412,161 +406,111 @@ float f0ForNote(int note_id, float fine, float tune) {
          arc_pow2f(tune * (1.f / 12.f));
 }
 
-// Picks the voice a new note goes to: the same note first (a repeat is a new
-// strike, not a second voice), then a key that has been released, then the
-// oldest, and only if every voice is still held, the one that has rung the
-// quietest.
-int allocateVoice(int note_id) {
-  for (int i = 0; i < kVoices; ++i)
-    if (s.voice[i].held && s.voice[i].note_id == note_id)
-      return i;
-
-  // A key that has been released first, and of those the one whose fade is
-  // furthest along (then the one struck longest ago): taking a voice that is
-  // still fading would cut it and click.
-  int released = -1;
-  for (int i = 0; i < kVoices; ++i) {
-    if (s.voice[i].held)
-      continue;
-    if (released < 0 || s.voice[i].rel < s.voice[released].rel ||
-        (s.voice[i].rel == s.voice[released].rel &&
-         s.voice[i].age < s.voice[released].age))
-      released = i;
-  }
-  if (released >= 0)
-    return released;
-
-  int oldest = 0;
-  for (int i = 1; i < kVoices; ++i)
-    if (s.voice[i].age < s.voice[oldest].age)
-      oldest = i;
-  return oldest;
-}
-
+// A repeat of the same key, or a different one, is a new strike into the same
+// bank: the NTS-1 plays one note at a time, so the note before it is over.
 void strike(int note_id, float fine) {
-  const int slot = allocateVoice(note_id);
-  Voice &v = s.voice[slot];
+  Voice &v = s.voice;
 
   const float note = (float)note_id + fine;
   voiceCoefficients(v, f0ForNote(note_id, fine, s.tune), note);
   clearBank(v);
   v.note_id = note_id;
-  v.age = ++s.age;
   v.held = true;
   v.rel = 1.f;
   v.exc_env = 1.f;   // the strike: one burst, from here the bank rings alone
 }
 
 void updatePitch(const user_osc_param_t *const params) {
-  // Only the newest note follows the keyboard: a struck body keeps the pitch it
-  // was struck at, but a solo line still glides with the tune knob and the
-  // fine tune the synth sends.
+  // A struck body keeps the pitch it was struck at, but a solo line still
+  // glides with the tune knob and the fine tune the synth sends.
   const int note_id = (int)(params->pitch >> 8);
   const float fine = (float)(params->pitch & 0xFFu) * (1.f / 255.f);
 
-  for (int i = 0; i < kVoices; ++i) {
-    Voice &v = s.voice[i];
-    if (!v.held || v.note_id != note_id)
-      continue;
-    const float f0 = f0ForNote(note_id, fine, s.tune);
-    if (fabsf(f0 - v.f0) > v.f0 * 0.003f)   // five cents is below the ear
-      voiceCoefficients(v, f0, (float)note_id + fine);
-  }
+  Voice &v = s.voice;
+  if (!v.held || v.note_id != note_id)
+    return;
+  const float f0 = f0ForNote(note_id, fine, s.tune);
+  if (fabsf(f0 - v.f0) > v.f0 * 0.003f)   // five cents is below the ear
+    voiceCoefficients(v, f0, (float)note_id + fine);
 }
 
 void render(q31_t *__restrict y, const uint32_t frames) {
-  // How many voices are doing anything, for the mix.
-  int live = 0;
-  bool quiet[kVoices];
-  for (int i = 0; i < kVoices; ++i) {
-    quiet[i] = voiceQuiet(s.voice[i]);
-    if (quiet[i]) {
-      // A bank whose strike never started, or whose key is up and whose fade is
-      // over, has nothing left worth keeping.
-      if (s.voice[i].exc_env > 0.f || !s.voice[i].held)
-        clearBank(s.voice[i]);
-    } else {
-      ++live;
-    }
-  }
-  if (live == 0) {
+  Voice &v = s.voice;
+
+  if (voiceQuiet(v)) {
+    // A bank whose strike never started, or whose key is up and whose fade is
+    // over, has nothing left worth keeping.
+    if (v.exc_env > 0.f || !v.held)
+      clearBank(v);
     for (uint32_t i = 0; i < frames; ++i)
       *y++ = 0;
     return;
   }
 
-  // Four notes at once are not four times as loud: the mix lets a single voice
-  // keep its level and tucks the others in under it.
-  const float mix = s.level / (1.f + 0.35f * (float)(live - 1));
+  // One voice, so the level knob is the level: the polyphonic mix tucked extra
+  // notes in under the first, and there is never a second one now.
+  const float mix = s.level;
+
+  const int modes = v.modes;
+  const float *const amp = v.amp;
+  const float *const a1 = v.a1;
+  const float *const a2 = v.a2;
+  float *const y1 = v.y1;
+  float *const y2 = v.y2;
 
   for (uint32_t i = 0; i < frames; ++i) {
-    float acc = 0.f;
-
-    for (int vi = 0; vi < kVoices; ++vi) {
-      if (quiet[vi])
-        continue;
-      Voice &v = s.voice[vi];
-
-      float exc = 0.f;
-      if (v.exc_env > 1e-7f) {
-        uint32_t rng = s.rng;
-        rng ^= rng << 13;
-        rng ^= rng >> 17;
-        rng ^= rng << 5;
-        s.rng = rng;
-        const float noise = (float)(int32_t)rng * (1.f / 2147483648.f);
-        v.exc_lp += (noise - v.exc_lp) * v.exc_coef;
-        exc = v.exc_lp * v.exc_env;
-        v.exc_env *= v.exc_env_coef;
-      } else {
-        v.exc_env = 0.f;
-        v.exc_lp = 0.f;
-      }
-
-      const int modes = v.modes;
-      const float *const amp = v.amp;
-      const float *const a1 = v.a1;
-      const float *const a2 = v.a2;
-      float *const y1 = v.y1;
-      float *const y2 = v.y2;
-
-      // The strike is over a few milliseconds into the note, and after that the
-      // excitation term is exactly zero for the rest of it: the bank is then a
-      // free decay and does not need the per-mode drive coefficient loaded at
-      // all. Adding zero is exact, so the two paths agree sample for sample.
-      float sum = 0.f;
-      if (exc != 0.f) {
-        for (int k = 0; k < modes; ++k) {
-          const float val = amp[k] * exc + a1[k] * y1[k] + a2[k] * y2[k];
-          y2[k] = y1[k];
-          y1[k] = val;
-          sum += val;
-        }
-      } else {
-        for (int k = 0; k < modes; ++k) {
-          const float val = a1[k] * y1[k] + a2[k] * y2[k];
-          y2[k] = y1[k];
-          y1[k] = val;
-          sum += val;
-        }
-      }
-
-      // A strike or a glide can move the modes under a bank that is still
-      // ringing and make it run away; drop it rather than pass a NaN on.
-      if (!(sum > -kBankLimit && sum < kBankLimit)) {
-        clearBank(v);
-        sum = 0.f;
-      }
-
-      // The key owns the note: a released voice fades out here in a few
-      // milliseconds and the amp EG of the synth does the rest.
-      float gain = v.out_gain;
-      if (!v.held) {
-        gain *= v.rel;
-        v.rel *= s.rel_coef;
-      }
-      acc += sum * gain;
+    float exc = 0.f;
+    if (v.exc_env > 1e-7f) {
+      uint32_t rng = s.rng;
+      rng ^= rng << 13;
+      rng ^= rng >> 17;
+      rng ^= rng << 5;
+      s.rng = rng;
+      const float noise = (float)(int32_t)rng * (1.f / 2147483648.f);
+      v.exc_lp += (noise - v.exc_lp) * v.exc_coef;
+      exc = v.exc_lp * v.exc_env;
+      v.exc_env *= v.exc_env_coef;
+    } else {
+      v.exc_env = 0.f;
+      v.exc_lp = 0.f;
     }
+
+    // The strike is over a few milliseconds into the note, and after that the
+    // excitation term is exactly zero for the rest of it: the bank is then a
+    // free decay and does not need the per-mode drive coefficient loaded at
+    // all. Adding zero is exact, so the two paths agree sample for sample.
+    float sum = 0.f;
+    if (exc != 0.f) {
+      for (int k = 0; k < modes; ++k) {
+        const float val = amp[k] * exc + a1[k] * y1[k] + a2[k] * y2[k];
+        y2[k] = y1[k];
+        y1[k] = val;
+        sum += val;
+      }
+    } else {
+      for (int k = 0; k < modes; ++k) {
+        const float val = a1[k] * y1[k] + a2[k] * y2[k];
+        y2[k] = y1[k];
+        y1[k] = val;
+        sum += val;
+      }
+    }
+
+    // A strike or a glide can move the modes under a bank that is still
+    // ringing and make it run away; drop it rather than pass a NaN on.
+    if (!(sum > -kBankLimit && sum < kBankLimit)) {
+      clearBank(v);
+      sum = 0.f;
+    }
+
+    // The key owns the note: a released note fades out here in a few
+    // milliseconds and the amp EG of the synth does the rest.
+    float gain = v.out_gain;
+    if (!v.held) {
+      gain *= v.rel;
+      v.rel *= s.rel_coef;
+    }
+    const float acc = sum * gain;
 
     *y++ = f32_to_q31(osc_softclipf(0.08f, acc * mix));
   }
@@ -593,23 +537,18 @@ void OSC_INIT(uint32_t platform, uint32_t api) {
   s.damp = 0.2f;
   s.level = 0.8f;
   s.tune = 0.f;
-  s.age = 0;
   s.rel_coef = arc_expneg(1.f / (kReleaseTau * kFs));
 
   s.rng = 0x9E3779B9u ^ osc_mcu_hash();
   if (s.rng == 0u)
     s.rng = 0x1234567u;
 
-  for (int i = 0; i < kVoices; ++i) {
-    Voice &v = s.voice[i];
-    v.note_id = 60;
-    v.age = 0;
-    v.held = false;
-    v.rel = 1.f;
-    v.modes = 0;
-    voiceCoefficients(v, 261.63f, 60.f);   // middle C, until a note arrives
-    clearBank(v);
-  }
+  s.voice.note_id = 60;
+  s.voice.held = false;
+  s.voice.rel = 1.f;
+  s.voice.modes = 0;
+  voiceCoefficients(s.voice, 261.63f, 60.f);   // middle C, until a note arrives
+  clearBank(s.voice);
 }
 
 void OSC_CYCLE(const user_osc_param_t *const params, int32_t *yn,
@@ -624,11 +563,8 @@ void OSC_CYCLE(const user_osc_param_t *const params, int32_t *yn,
   const float dec = clipminmaxf(0.f, s.decay_base + 0.35f * s.lfo, 1.f);
   if (fabsf(dec - s.decay) > 0.004f) {
     s.decay = dec;
-    for (int i = 0; i < kVoices; ++i) {
-      Voice &v = s.voice[i];
-      if (v.modes > 0)
-        voiceCoefficients(v, v.f0, v.note);
-    }
+    if (s.voice.modes > 0)
+      voiceCoefficients(s.voice, s.voice.f0, s.voice.note);
   }
 
   render((q31_t *)yn, frames);
@@ -642,14 +578,13 @@ void OSC_NOTEON(const user_osc_param_t *const params) {
 
 void OSC_NOTEOFF(const user_osc_param_t *const params) {
   // The key comes up and the note ends: the voice starts its fade here and the
-  // amp EG of the synth takes over from there. The voice is free for the next
-  // note as soon as the fade is over, which is a few milliseconds.
+  // amp EG of the synth takes over from there. A new note can strike the bank
+  // as soon as the fade is over, which is a few milliseconds.
   const int note_id = (int)(params->pitch >> 8);
-  for (int i = 0; i < kVoices; ++i)
-    if (s.voice[i].held && s.voice[i].note_id == note_id) {
-      s.voice[i].held = false;
-      s.voice[i].rel = 1.f;
-    }
+  if (s.voice.held && s.voice.note_id == note_id) {
+    s.voice.held = false;
+    s.voice.rel = 1.f;
+  }
 }
 
 void OSC_MUTE(const user_osc_param_t *const params) {
@@ -718,14 +653,10 @@ void OSC_PARAM(uint16_t index, uint16_t value) {
     break;
   }
 
-  // Anything that shapes the bank re-lands every voice that is still ringing:
-  // the notes keep their pitch and the object changes under them.
+  // Anything that shapes the bank re-lands the voice that is still ringing: the
+  // note keeps its pitch and the object changes under it.
   if (!reshape)
     return;
-  for (int i = 0; i < kVoices; ++i) {
-    Voice &v = s.voice[i];
-    if (v.modes == 0)
-      continue;
-    voiceCoefficients(v, v.f0, v.note);
-  }
+  if (s.voice.modes > 0)
+    voiceCoefficients(s.voice, s.voice.f0, s.voice.note);
 }
