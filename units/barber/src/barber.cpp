@@ -22,6 +22,7 @@
  */
 
 #include "userdelfx.h"
+#include "../../common/program_start.h"
 
 namespace {
 
@@ -125,6 +126,7 @@ void updateSweep() {
  *---------------------------------------------------------------------------*/
 
 void DELFX_INIT(uint32_t platform, uint32_t api) {
+  program_start::reset();
   (void)platform;
   (void)api;
 
@@ -209,6 +211,12 @@ void DELFX_PROCESS(float *xn, uint32_t frames) {
 }
 
 void DELFX_PARAM(uint8_t index, int32_t value) {
+  // A program that has never held this effect sends zeroes for its knobs, and
+  // zero is time zero or depth zero: the effect would look dead until a knob
+  // moved. Until one of them is not zero, it keeps its own start values.
+  if (!program_start::chosen(value))
+    return;
+
   const float v = clipminmaxf(0.f, (float)value * (1.f / 1023.f), 1.f);
 
   switch (index) {

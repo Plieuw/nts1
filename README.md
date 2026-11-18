@@ -691,6 +691,15 @@ so your units cannot collide with someone else's.
   dry/wet on `irbody`, the notch count on `barber`. There are no sub-menus in the format: parameter names and
   ranges are fixed in the manifest, so a deeper menu would have to be faked with
   one parameter as a page selector, which is why none of these need one.
+* A freshly installed unit sounds like its own start values, not like nothing.
+  The instrument hands a unit the parameter values the program has stored, and a
+  program that has never held that unit sends zero for all of them — a level of
+  zero is silence, so every unit was dead until a knob was moved (this is exactly
+  how `noise` and `bowed` behaved on the NTS-1). Each unit now keeps what its
+  `OSC_INIT` set until the program sends a parameter that is not zero; from then
+  on the patch wins, zeroes included, so a knob at the bottom still means the
+  bottom. A and B are latched separately, because on `bowed` A is bow pressure
+  and an A that was never chosen should not pull the level down with it.
 * `irbody` is mono in the wet path, so the body is centred, and its tails are
   short by design: these are bodies, not halls — for a space, put a stock reverb
   after it. Its wet path now rings for as long as it is fed, where the

@@ -13,3 +13,4 @@ fuzzpeak 0.850
 fuzznan 0
 tail_db -106.7
 tail_db_top -16.0
+boot_db 25.7

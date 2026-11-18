@@ -12,7 +12,11 @@ stock effects so a problem cannot come from a neighbour.
 ## 1. Does every unit fit and run cleanly?
 
 For each of the eight units: play a chord, hold it, move every knob across its
-full range, then release.
+full range, then release. Before touching anything, hold one note with the unit
+just installed: it has to sound at once, on its own start values. A fresh
+program sends zero for every parameter, and zero is silence — a unit that is
+quiet until a knob is moved is the start-value bug this repository already had,
+not a quiet patch.
 
 | Check | What a failure sounds like |
 | --- | --- |

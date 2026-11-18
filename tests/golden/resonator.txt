@@ -35,3 +35,4 @@ model16 0.0
 fuzzpeak 0.920
 fuzznan 0
 release_db -159.4
+boot_rms 0.2023

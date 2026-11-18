@@ -17,6 +17,7 @@
  */
 
 #include "usermodfx.h"
+#include "../../common/program_start.h"
 
 namespace {
 
@@ -170,6 +171,7 @@ void processChannel(const float *xn, float *yn, uint32_t frames, Channel &c) {
  *---------------------------------------------------------------------------*/
 
 void MODFX_INIT(uint32_t platform, uint32_t api) {
+  program_start::reset();
   (void)platform;
   (void)api;
 
@@ -190,6 +192,12 @@ void MODFX_PROCESS(const float *main_xn, float *main_yn, const float *sub_xn,
 }
 
 void MODFX_PARAM(uint8_t index, int32_t value) {
+  // A program that has never held this effect sends zeroes for its knobs, and
+  // zero is time zero or depth zero: the effect would look dead until a knob
+  // moved. Until one of them is not zero, it keeps its own start values.
+  if (!program_start::chosen(value))
+    return;
+
   const float v = clipminmaxf(0.f, (float)value * (1.f / 1023.f), 1.f);
 
   switch (index) {

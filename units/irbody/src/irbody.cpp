@@ -40,6 +40,7 @@
  */
 
 #include "userrevfx.h"
+#include "../../common/program_start.h"
 
 #include "../../common/arcmath.h"
 
@@ -501,6 +502,7 @@ void startFade(float pos) {
  *---------------------------------------------------------------------------*/
 
 void REVFX_INIT(uint32_t platform, uint32_t api) {
+  program_start::reset();
   (void)platform;
   (void)api;
 
@@ -580,6 +582,12 @@ void REVFX_PROCESS(float *xn, uint32_t frames) {
 }
 
 void REVFX_PARAM(uint8_t index, int32_t value) {
+  // A program that has never held this effect sends zeroes for its knobs, and
+  // zero is time zero or depth zero: the effect would look dead until a knob
+  // moved. Until one of them is not zero, it keeps its own start values.
+  if (!program_start::chosen(value))
+    return;
+
   switch (index) {
   case k_user_revfx_param_time: {
     // The A knob is a continuum, not eight steps. Between two bodies the mode

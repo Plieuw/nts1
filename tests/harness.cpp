@@ -415,5 +415,30 @@ int main(int argc, char **argv) {
   }
 #endif
 
+  // Out of the box: a program that has never held this unit sends every
+  // parameter as zero, which is a level of zero. This is what the instrument
+  // actually does with a freshly installed unit, so it is measured last (it
+  // draws from the same random stream as everything above, and moving it would
+  // shift every golden). An oscillator has to be audible here; an effect has to
+  // do something to the signal rather than pass it through.
+  unitInit();
+  for (int i = 0; i < 8; ++i) unitParam(i, 0);
+  unitNote(60);
+  renderInto(gOut, kSamples);
+#if UNITKIND == 1 || UNITKIND == 2 || UNITKIND == 3
+  {
+    // Against the dry input, on the same clock the render used.
+    double d = 0.0, dry = 0.0;
+    for (int i = 0; i < kSamples; ++i) {
+      const double v = (double)srcAt(i), r = (double)gOut[i] - v;
+      d += r * r;
+      dry += v * v;
+    }
+    printf("boot_db %.1f\n", 10.0 * log10((d + 1e-12) / (dry + 1e-12)));
+  }
+#else
+  printf("boot_rms %.4f\n", rmsOf(gOut + windowAttack(), kWindow));
+#endif
+
   return 0;
 }

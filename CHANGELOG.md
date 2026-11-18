@@ -3,6 +3,36 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## all eight units — start values
+
+A newly installed unit sounded like nothing on the instrument until a knob was
+moved. The synth hands a unit the parameter values stored in the program, and a
+program that has never held that unit sends zero for every one of them — zero is
+a level of zero, so the unit opened its own output and was silent. `noise` and
+`bowed` were reported exactly like that on the NTS-1, and `resonator` only
+sounded after its Level had been turned by hand. Nothing was wrong with the DSP:
+rendered on the host, all three are loud at those settings once the level is not
+zero.
+
+So a unit now keeps what its `*_INIT` set until the program sends a parameter
+value that is not zero. From the first such value on the patch is in charge and
+zeros count, so a knob turned all the way down still means what it says. The A
+and B knobs are latched on their own flag: on `bowed` A is the bow pressure and
+zero there is close to silence, so an A position that was never chosen cannot
+pull the level down with it, and an A that is chosen takes over without touching
+the edit parameters.
+
+Versions: `noise` 1.3-0, `resonator` 1.7-0, `bowed` 1.4-0, `lpg` 1.1-0, `reso`
+1.1-0, `elements` 1.2-0, `barber` 1.2-0, `irbody` 1.5-0.
+
+- The harness measures it: `boot_rms` for an oscillator and `boot_db` for an
+effect, taken with every parameter at zero, last in `main()` so the random
+stream the other figures draw from does not move. `tests/run.sh` fails below
+0.01 RMS (an oscillator has to be heard) and below -25 dB for an effect (it has
+to change the signal rather than pass it through). Building `noise` without the
+latch measures 0.0000 there and the suite rejects it, which is the bug the
+instrument showed.
+
 ## barber — 1.1-0
 
 - The number of notches is a control now, on the shifted DEPTH knob: one to

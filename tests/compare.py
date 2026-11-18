@@ -9,6 +9,8 @@ KNOB_MOVES = 2.0    # dB a knob that used to move must still move
 RELEASE_TOL = 10.0  # dB a released note may ring louder than it was measured
 TAIL_DB = -60.0     # ten seconds on, the tail with the knobs in the middle
 TAIL_DB_TOP = -12.0  # ... and with the knobs at the top, where a bank rings longest
+BOOT_RMS = 0.01     # audible with every parameter at zero, as a fresh program sends
+BOOT_DB = -25.0     # an effect has to change the signal at those values, not pass it
 
 
 def load(path):
@@ -52,6 +54,18 @@ def main(golden, current):
                 problems.append(
                     "%s %.1f dB ten seconds after the input stopped (limit %.0f)"
                     % (key, cv[0], limit))
+        elif key == "boot_rms":
+            if cv[0] < BOOT_RMS:
+                problems.append(
+                    "silent with every parameter at zero (%.4f, needs %.2f): a "
+                    "freshly installed unit must sound like its own start values"
+                    % (cv[0], BOOT_RMS))
+        elif key == "boot_db":
+            if cv[0] < BOOT_DB:
+                problems.append(
+                    "does nothing with every parameter at zero (%.1f dB, needs "
+                    "%.0f): a fresh program sends zeroes, not the unit's values"
+                    % (cv[0], BOOT_DB))
         elif key == "notch_db":
             # The level of the difference between one notch and eight, against
             # the signal: a knob that does nothing measures -300 dB.

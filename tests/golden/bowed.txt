@@ -23,3 +23,4 @@ model4 25.9
 fuzzpeak 0.820
 fuzznan 0
 release_db -172.2
+boot_rms 0.0335

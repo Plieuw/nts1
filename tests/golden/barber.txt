@@ -16,3 +16,4 @@ fuzznan 0
 notch_db -28.2
 tail_db -150.1
 tail_db_top -150.9
+boot_db -17.9

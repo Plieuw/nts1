@@ -39,6 +39,7 @@
  */
 
 #include "userosc.h"
+#include "../../common/program_start.h"
 
 namespace {
 
@@ -610,6 +611,7 @@ void renderBlock(q31_t *__restrict y, const uint32_t frames) {
  *---------------------------------------------------------------------------*/
 
 void OSC_INIT(uint32_t platform, uint32_t api) {
+  program_start::reset();
   (void)platform;
   (void)api;
 
@@ -699,6 +701,18 @@ void OSC_MUTE(const user_osc_param_t *const params) {
 }
 
 void OSC_PARAM(uint16_t index, uint16_t value) {
+  // A program that has never held this unit sends zeroes for its six edit knobs
+  // and for A and B, and zero is a level of zero or a bow with no pressure: the
+  // unit would look dead until a knob moved. A and B are latched on their own so
+  // one of them arriving as zero cannot mute the level knobs.
+  if (index == k_user_osc_param_shape || index == k_user_osc_param_shiftshape) {
+    if (!program_start::chosen_shape((int32_t)value))
+      return;
+  } else if (index >= k_user_osc_param_id1 && index <= k_user_osc_param_id6 &&
+             !program_start::chosen((int32_t)value)) {
+    return;
+  }
+
   switch (index) {
   case k_user_osc_param_shape:
     s.shape_base = param_val_to_f32(value);
