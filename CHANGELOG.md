@@ -3,6 +3,34 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## irbody — three lines and a guitar
+
+This was the most expensive unit here, and part of the reason was what the knob
+was allowed to be: a sweep from a violin to a piano soundboard and a steel plate
+is not a body, it is a small room, and the fourth delay line plus the nine
+millisecond allpass on the side signal were paid for on every sample.
+
+- No body is larger than a guitar. The comb scale and both decay constants are
+  capped at the guitar's, so a piano or a plate keeps its own modes, colour and
+  damping but the size of the object it happens in no longer grows past a body
+  you could hold. The longest comb line is 9.3 ms now, the tail 8 to 22 ms.
+- Three comb lines instead of four, and the long allpass on the side signal is
+  gone.
+- Host, five alternating passes against the previous build in one session,
+  minimum: 42.4 → 40.2 ns/frame playing (-5%), 2.1 → 1.8 idle. Counted off the
+  image for the M4, the per-sample engine is 340 → 321 cycles.
+- Memory: the combs are as long as the largest body needs and no longer, so the
+  SDRAM went 52 → 11 KB. The engines and the short lines moved from SDRAM to
+  SRAM (4.3 KB); the host cost of that is nil, it is about where a sample waits
+  on the instrument.
+- The level table was fitted against the old sizes; with the sizes capped the
+  bodies sat 5.5 dB apart. Measured per preset again, they are 4.2 dB apart.
+
+The goldens moved, which is the point of this change: the sound is what was
+altered.
+
+Versions: `irbody` 1.7-0.
+
 ## manifests — the versions the notes named
 
 Four manifests were behind the notes, for one reason: their commits bumped the

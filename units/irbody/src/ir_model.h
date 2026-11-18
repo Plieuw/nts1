@@ -23,6 +23,11 @@
  * real instruments (A0, B1-, B1+ and the bridge hill), the wood preset uses the
  * free-free bar series, the steel preset a plate-like inharmonic series.
  * Decay times are chosen so the response has rung out within kIrLen.
+ *
+ * The unit itself never plays an object larger than a guitar: irbody.cpp caps
+ * the comb scale and the two decay constants at the guitar's, so a piano or a
+ * plate here is that body's colour in a guitar-sized box. The model keeps the
+ * objects as they were measured, in this header and in the WAV files.
  */
 
 #ifndef IR_MODEL_H

@@ -19,7 +19,7 @@
  * same one with the finite response taken out of it.
  *
  *   resonances      one two pole resonator per mode, driven by the input
- *   diffuse tail    four delay lines in a feedback delay network
+ *   diffuse tail    three delay lines in a feedback delay network
  *   size            the delays of that network
  *   damping         the same one pole low pass on the wet signal as before
  *
@@ -53,10 +53,19 @@ constexpr float kFs = 48000.f;
 constexpr float kPi = 3.14159265358979f;
 
 constexpr int kMaxModes = 11;   // the widest mode set in ir_model.h
-constexpr int kCombs = 4;
-// The longest comb is the piano's tail at size 1.38: 15.7 ms * 1.38 = 21.7 ms,
-// so 1100 samples covers every preset and buildEngine's clamp never bites.
-constexpr int kCombMax = 1100;
+constexpr int kCombs = 3;
+// The longest comb at the largest body the knob may reach: 11.9 ms * 0.78 *
+// 48 kHz is 446 samples, so 448 covers every preset and buildEngine's clamp
+// never bites.
+constexpr int kCombMax = 448;
+// A body is at most a guitar, however the model describes the object: the tail
+// of a piano soundboard or a steel plate is not a room to be heard in, and the
+// body this unit puts under a note should never be larger than the little
+// soundbox a guitar is. Anything the model puts above these is brought back to
+// the guitar's size and decay.
+constexpr float kBodySize = 0.78f;   // the guitar's comb scale
+constexpr float kMaxModeTau = 0.022f;  // the guitar's mode decay, seconds
+constexpr float kMaxTailTau = 0.010f;  // and the decay of its diffuse tail
 constexpr int kAp0Len = 240;    // 5.0 ms allpass
 constexpr int kAp1Len = 96;     // 2.0 ms allpass
 constexpr int kPresetCount = irmodel::kPresetCount;
@@ -69,10 +78,10 @@ constexpr int kGateHold = 960;            // 20 ms of digital silence
 constexpr float kGateStep = 1.f / 480.f;  // 10 ms ramp
 // A body never sums this loud; anything past it is a runaway, not a sound.
 constexpr float kBankLimit = 100.f;
-// Left and right read the same four lines a few samples apart: a body is one
+// Left and right read the same three lines a few samples apart: a body is one
 // object, so its modes stay in the middle, but its tail arrives at two points
 // of the corpus, and that difference is what a listener hears as size.
-const int kTap[kCombs] = {53, 97, 31, 149};
+const int kTap[kCombs] = {53, 97, 31};
 constexpr float kStereoTrim = 0.72f;  // see engineSample
 
 // The old unit normalised every response to a peak of 0.5 and convolved with it.
@@ -84,7 +93,6 @@ constexpr float kStereoTrim = 0.72f;  // see engineSample
 // the three that smear the tail, the long one on the side signal, and the short
 // one that turns the right channel's modes a little.
 constexpr float kApG = 0.6f;
-constexpr float kApG3 = 0.72f;
 constexpr float kApG4 = 0.4f;
 
 // Only the buffers that need to be big live in SDRAM: the eighty five
@@ -97,16 +105,11 @@ float g_comb[2][kCombs][kCombMax] __sdram;
 float g_ap0[2][kAp0Len];
 float g_ap1[2][kAp1Len];
 float g_ap2[2][kAp1Len];  // the side signal, so left and right differ
-// A long allpass on that difference, mostly a delay with no echo of its own:
-// at a few millimetres of path the two ears get nearly the same signal, and it
-// takes a path of this order before the channels genuinely differ.
-constexpr int kAp3Len = 449;  // 9.4 ms; the SRAM this slot has left is the limit, not the sound
 // The modes are one object, but they do not radiate from one point either: the
 // right channel takes them through an allpass of a third of a millisecond. An
 // allpass keeps the level, so this widens the upper partials of every body
 // without putting a notch in the sum.
 constexpr int kAp4Len = 17;
-float g_ap3[2][kAp3Len] __sdram;  // 3.6 KB, the one line that had to stay there
 float g_ap4[2][kAp4Len];
 
 /*---------------------------------------------------------------------------*
@@ -143,7 +146,6 @@ struct Engine {
   float tail_out_cut;
   float tail_out_lp;
   float tail_out_lp_s;
-  int ap3_pos;
   int ap4_pos;
   float level;
   int ap2_pos;
@@ -188,7 +190,6 @@ void clearEngine(Engine &e) {
   e.ap0_pos = 0;
   e.ap1_pos = 0;
   e.ap2_pos = 0;
-  e.ap3_pos = 0;
   e.ap4_pos = 0;
 }
 
@@ -202,16 +203,16 @@ void clearBuffers(int slot) {
     g_ap1[slot][i] = 0.f;
     g_ap2[slot][i] = 0.f;
   }
-  for (int i = 0; i < kAp3Len; ++i)
-    g_ap3[slot][i] = 0.f;
   for (int i = 0; i < kAp4Len; ++i)
     g_ap4[slot][i] = 0.f;
 }
 
 // The comb delays carry the size of the object: a violin body answers inside a
 // few milliseconds, a room has to be a few metres across before it sounds like
-// one. They are coprime-ish on purpose, so the four do not line up into a pitch.
-const float kBodyDelays[kCombs] = {0.0057f, 0.0083f, 0.0119f, 0.0157f};
+// one. They are coprime-ish on purpose, so the three do not line up into a
+// pitch. Three lines and not four: a body is a small object, and the fourth
+// line buys density a guitar-sized box does not have.
+const float kBodyDelays[kCombs] = {0.0057f, 0.0083f, 0.0119f};
 
 // How loud the resonances and the tail sit in each object, fitted band by band
 // to the responses the old version convolved with. The bank is the modes; the
@@ -222,17 +223,12 @@ struct Trim {
   float tail;
 };
 
-// How large the object is. The mode frequencies come from the model and cannot
-// be stretched sensibly, but the tail can: these are the factors the comb
-// lengths are scaled by, and morphing between two bodies walks from one to the
-// other (a violin into a cello) instead of jumping.
-const float kSize[kPresetCount] = {0.82f, 1.12f, 1.38f, 0.78f,
-                                   0.92f, 1.24f, 0.88f, 1.06f};
 
 // Measured on the host: the RMS each body settles at for the same input, in
 // dB against the loudest of them. Without these the knob jumps by up to 9 dB
 // between bodies (steel is the quiet one), and the crossfade would not hide it.
-const float kLevelDb[kPresetCount] = {4.0f, 0.0f, 3.0f, 0.3f, 1.3f, 9.8f, 0.3f, 0.7f};
+const float kLevelDb[kPresetCount] = {6.8f, -0.3f, 2.8f, 2.1f,
+                                      0.2f, 8.8f, -1.9f, 1.0f};
 
 const Trim kTrim[kPresetCount] = {
     {0.638f, 4.167f},  // violin
@@ -272,7 +268,7 @@ void buildEngine(int slot, float pos) {
                                 : gb + (trimB.bank - gb) * (2.f * t - 1.f),
                      (t < 0.5f) ? trimA.tail + (gt - trimA.tail) * (2.f * t)
                                 : gt + (trimB.tail - gt) * (2.f * t - 1.f)};
-  const float size = kSize[a] + (kSize[b] - kSize[a]) * t;
+  const float size = kBodySize;
   const float level = arc_dbtolevel(kLevelDb[a] + (kLevelDb[b] - kLevelDb[a]) * t);
   // Both bodies' brightness, not the nearest one's: the mode set jumps at the
   // half step, but brightness is a number and glides the whole way.
@@ -300,7 +296,8 @@ void buildEngine(int slot, float pos) {
     if (f <= 0.f || f >= 0.45f * kFs)
       continue;
 
-    const float r = arc_expneg(1.f / (p.tau * m.decay * kFs));
+    const float tau_mode = (p.tau > kMaxModeTau) ? kMaxModeTau : p.tau;
+    const float r = arc_expneg(1.f / (tau_mode * m.decay * kFs));
     const float w = 2.f * kPi * f / kFs;
     float sw, cw;
     arc_sincos(w, sw, cw);
@@ -320,7 +317,7 @@ void buildEngine(int slot, float pos) {
   // time constant of -D / ln(g), so g = exp(-D / tau) gives the model's tau.
   const float tauA = (irmodel::kPresets[a].noise_tau > 0.0005f) ? irmodel::kPresets[a].noise_tau : 0.0005f;
   const float tauB = (irmodel::kPresets[b].noise_tau > 0.0005f) ? irmodel::kPresets[b].noise_tau : 0.0005f;
-  const float tau = tauA + (tauB - tauA) * t;
+  const float tau = clipminmaxf(0.0005f, tauA + (tauB - tauA) * t, kMaxTailTau);
   for (int c = 0; c < kCombs; ++c) {
     int len = (int)(kBodyDelays[c] * kFs * size);
     if (len > kCombMax)
@@ -373,14 +370,14 @@ __attribute__((noinline)) void engineSample(int slot, Engine &e, float x,
     bank += e.mode_gain[k] * y;
   }
 
-  // Tail: four damped combs in parallel, then two allpasses to smear them.
+  // Tail: three damped combs in parallel, then two allpasses to smear them.
   e.tail_lp_in += (x - e.tail_lp_in) * e.tail_cut;
   const float drive = e.tail_lp_in + (x - e.tail_lp_in) * e.tail_hi;
 
-  // Four delay lines in a feedback delay network: each line's output is damped,
+  // Three delay lines in a feedback delay network: each line's output is damped,
   // fed back through a Householder matrix and summed into every other line. That
-  // is what makes the tail dense; four combs side by side would leave the peaks
-  // of their own lengths standing, which sounds like a flange instead of a room.
+  // is what makes the tail dense; combs side by side would leave the peaks of
+  // their own lengths standing, which sounds like a flange instead of a body.
   float tail = 0.f;
   float side = 0.f;
   float out_sum = 0.f;
@@ -429,15 +426,6 @@ __attribute__((noinline)) void engineSample(int slot, Engine &e, float x,
     buf[e.ap2_pos] = side + kApG * y;
     if (++e.ap2_pos >= kAp1Len)
       e.ap2_pos = 0;
-    side = y;
-  }
-  {
-    float *buf = g_ap3[slot];
-    const float d = buf[e.ap3_pos];
-    const float y = d - kApG3 * side;
-    buf[e.ap3_pos] = side + kApG3 * y;
-    if (++e.ap3_pos >= kAp3Len)
-      e.ap3_pos = 0;
     side = y;
   }
 
