@@ -366,23 +366,37 @@ used for a pair instead of being read and written once per sample.
 
 ### barber — delay effect (barberpole phaser)
 
-One to eight all-pass sections, one notch each, sweep 60 Hz .. 9.6 kHz, and a
-second cascade half a cycle out of phase takes over where the first wraps around,
-crossfaded with a raised cosine. The result never jumps, so it rises (or falls)
-forever. Feedback sharpens the notches into the classic jet sound.
+One to sixteen all-pass sections, eight notches in the audible range at the top
+setting, and a second cascade half a cycle out of phase takes over where the first
+wraps around, crossfaded with a raised cosine. The result never jumps, so it
+rises (or falls) forever. Feedback sharpens the notches into the classic jet
+sound.
+
+The sweep covers 40 Hz .. 6.4 kHz of all-pass corner, which puts the lowest notch
+at a tenth of the corner and the highest at 3.7 times it: every notch travels
+7.3 octaves on its way up, 44% more than the five it used to cross. Sixteen
+sections and a wider corner cost 42% of the unit's host time (33.8 → 47.9
+ns/frame), which is still the cheapest thing in this collection.
 
 | Control | Function |
 | --- | --- |
 | A (TIME) | rate and direction: left of centre falls, right of centre rises, further out is faster (0.02 .. 10 Hz) |
 | B (DEPTH) | feedback / resonance |
-| DEL + B | number of notches, one to eight |
+| DEL + B | number of notches, one to sixteen |
 
-The dry/wet mix is fixed at the middle, which is where the notches are deepest:
-with the whole cascade on the wet side they are a phase sweep and nothing else,
-and at the dry end there is no phaser at all. The notch count is the control that
-was missing from the three this slot has, so it took the shifted DEPTH control and
-the mix became the fixed one. Adding or removing a section starts or empties that
+Each cascade is mixed with the dry signal at the middle, which is where its
+notches are deepest, and the two are then crossfaded; that sum is the output.
+Mixing it with the dry signal a second time used to put a 6 dB ceiling on the
+notches — a quarter of the all-pass against three quarters of the dry — and that
+ceiling, not the sweep, was most of why this slot read as a phase drift rather
+than a barberpole. The mix is fixed because the shifted DEPTH control is needed
+for the notch count: adding or removing a section starts or empties that
 section's state, so the count can be turned while it runs without a click.
+
+Measured with a steady tone over six seconds, the level at that tone swings with
+the sweep: 3.1 dB at 500 Hz, 4.9 at 977 and 7.8 at 2 kHz, where the eight-section
+version swung 0.0, 0.1 and 0.2 dB at the same tones. At the middle of the knobs
+the unit is −0.03 dB against the dry signal, measured with a plucked note.
 
 ### irbody — reverb effect (instrument bodies)
 
@@ -526,7 +540,7 @@ FPU, so the same code there costs several times what it costs on a desktop core;
 even at eight times the host, the heaviest unit is around 2% of a block.
 
 Which is why nothing here is optimised for speed at the cost of the sound: the
-eight allpass stages of `barber` are what make its sweep a sweep, and cutting
+sixteen allpass stages of `barber` are what make its sweep a sweep, and cutting
 them would buy idle cycles nothing needs. The one place the budget is real is
 memory in the oscillator slot: `bowed` keeps one delay loop of 1024 samples and
 `resonator` one bank of modes, 4 KB and 0.4 KB of the 32 KB they get.
@@ -619,7 +633,7 @@ effect slots are handed between notes.
 | `lpg` | 1.7 KB | 0.1 KB | 21.0 → 21.0 ns | 21.1 → 2.1 ns (**-90%**) |
 | `reso` | 2.1 KB | 0.4 KB | 28.6 → 22.3 ns (**-22%**) | 29.5 → 2.6 ns (**-91%**) |
 | `elements` | 2.6 KB | 0.4 KB | 39.2 → 16.3 ns (**-58%**) | 39.9 → 1.6 ns (**-96%**) |
-| `barber` | 1.9 KB | 0.3 KB | 33.7 → 33.9 ns | 34.0 → 2.4 ns (**-93%**) |
+| `barber` | 2.4 KB | 0.6 KB | 33.8 → 47.9 ns (16 sections) | 34.0 → 2.4 ns (**-93%**) |
 | `irbody` | 5.3 KB | 4.0 KB | 42.2 → 32.3 ns (**-23%**) | 46.5 → 2.1 ns (**-95%**) |
 
 Summed over one slot of each type — `bowed`, `elements`, `barber` and `irbody`,

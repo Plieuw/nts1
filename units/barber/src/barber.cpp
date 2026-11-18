@@ -3,16 +3,17 @@
  *
  * BSD 3-Clause License, see LICENSE.
  *
- * A sweeps through a cascade of one to eight all-pass sections, one notch per
- * section, and where a single sweep would run out of spectrum and jump back, a
- * second cascade a half cycle out of phase takes over. The two cascades are crossfaded with a raised cosine
- * so the jump is never heard, which gives the endless rise (or fall) of a
- * barberpole. Feedback sharpens the notches into the classic jet sound.
+ * A sweeps through a cascade of one to sixteen all-pass sections, half of them
+ * landing as a notch in the audible range, and where a single sweep would run
+ * out of spectrum and jump back, a second cascade a half cycle out of phase
+ * takes over. The two cascades are crossfaded with a raised cosine so the jump
+ * is never heard, which gives the endless rise (or fall) of a barberpole.
+ * Feedback sharpens the notches into the classic jet sound.
  *
  * A-knob (TIME)   rate and direction: left of centre falls, right of centre
  *                 rises, further from centre is faster (0.02 .. 10 Hz)
  * B-knob (DEPTH)  feedback / resonance of the phaser
- * DEL + B knob    number of notches, one to eight
+ * DEL + B knob    number of notches, one to sixteen
  *
  * The dry/wet mix sits at the middle, where the notches are deepest: with the
  * whole cascade on the wet side they are a phase sweep and nothing else, and at
@@ -27,11 +28,23 @@
 
 namespace {
 
-constexpr int kStages = 8;
+constexpr int kStages = 16;
 constexpr float kFs = 48000.f;
-// Dry/wet at the middle: the mix that makes the notches deepest. Fixed, because
-// the shifted DEPTH control is needed for the notch count instead.
-constexpr float kMix = 0.5f;
+// Each cascade is mixed with the dry signal at the middle, which is where its
+// notches are deepest. The two are then crossfaded and that sum is the output:
+// mixing it with the dry signal a second time put a 6 dB ceiling on the notches
+// (a quarter of the all-pass against three quarters of the dry) and that ceiling
+// was most of why the sweep sounded like a phase drift instead of a barberpole.
+constexpr float kHalf = 0.5f;
+// The corner the sweep travels: two decades and a bit, which puts the highest
+// notch of the sixteen at 3.7 times the corner and the lowest at a tenth of it,
+// so every notch crosses seven octaves on its way up.
+constexpr float kSweepLo = 40.f;
+constexpr float kSweepOct = 7.32f;
+// The 50/50 notch mix is 2.5 dB down on the dry signal on average, and an effect
+// that drops the level is a level change, not a phaser: this brings it back to
+// unity at the middle of the knobs, where the sweep spends its time.
+constexpr float kMakeup = 0.74f;
 constexpr float kPi = 3.14159265358979f;
 
 struct Stage {
@@ -101,19 +114,21 @@ void updateRate() {
   s.dir = (off < 0.f) ? -1.f : 1.f;
   const float speed = fabsf(off);
   s.rate = s.dir * 0.02f * expf_fast(6.21f * speed);  // 0.02 .. 10 Hz
-  s.fb_gain = 0.65f * s.depth;
+  // Enough feedback that the notches ring into the jet the barberpole is known
+  // for; the soft clip in the loop keeps the resonance bounded.
+  s.fb_gain = 0.8f * s.depth;
 }
 
 void updateSweep() {
-  // Two exponentials a half cycle apart, 60 Hz .. 9.6 kHz.
-  const float fa = 60.f * expf_fast(5.07f * s.phase);
+  // Two exponentials a half cycle apart, 40 Hz .. 6.4 kHz.
+  const float fa = kSweepLo * expf_fast(kSweepOct * s.phase);
   float fb_phase = s.phase + 0.5f;
   if (fb_phase >= 1.f)
     fb_phase -= 1.f;
-  const float fb = 60.f * expf_fast(5.07f * fb_phase);
+  const float fb = kSweepLo * expf_fast(kSweepOct * fb_phase);
 
-  s.ca = allpassCoef(clipminmaxf(60.f, fa, 0.45f * kFs));
-  s.cb = allpassCoef(clipminmaxf(60.f, fb, 0.45f * kFs));
+  s.ca = allpassCoef(clipminmaxf(20.f, fa, 0.45f * kFs));
+  s.cb = allpassCoef(clipminmaxf(20.f, fb, 0.45f * kFs));
 
   const float w = 0.5f - 0.5f * fx_cosf(s.phase);
   s.wa = w;
@@ -196,18 +211,16 @@ void DELFX_PROCESS(float *xn, uint32_t frames) {
         xb = yb;
       }
 
-      // The two cascades sum incoherently with the dry signal, so trim the wet
-      // path to keep the effect roughly unity gain.
       // Each cascade is mixed with the dry signal on its own first: that is
       // what turns an all-pass sweep into audible notches. Crossfading the
       // cascades before the mix would only average their phase away.
-      const float na = in + (xa - in) * 0.5f;
-      const float nb = in + (xb - in) * 0.5f;
+      const float na = in + (xa - in) * kHalf;
+      const float nb = in + (xb - in) * kHalf;
       const float wet = s.wa * na + s.wb * nb;
 
       c.fb = fx_softclipf(0.2f, wet);
 
-      xn[2 * i + ch] = in + (wet - in) * kMix;
+      xn[2 * i + ch] = kMakeup * wet;
     }
 
     s.phase += inc;

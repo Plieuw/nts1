@@ -3,6 +3,36 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## barber — twice the notches, deeper notches
+
+The barberpole had eight sections and a dry/wet mix applied twice, so its notches
+were capped at 6 dB however deep the phase cancellation went. Measured on a
+steady tone, the sweep moved the tone by 0.1 dB: what was left was the feedback
+ringing, not a moving comb.
+
+- **Eight to sixteen all-pass sections**, so eight notches in the audible range at
+the top setting, and the shifted DEPTH control spreads one to sixteen rather than
+one to eight.
+- **The second dry/wet mix is gone.** Each cascade is still mixed 50/50 with the
+dry signal, because that is what turns a phase sweep into notches, but that sum
+is the output now instead of being mixed with the dry signal again at half
+weight — a quarter of the all-pass against three quarters of the dry.
+- **A wider corner**: 40 Hz .. 6.4 kHz instead of 60 Hz .. 2 kHz, so a notch
+travels 7.3 octaves per cycle rather than 5.1.
+- **More feedback**: 0.8 × DEPTH instead of 0.65; the soft clip in the loop keeps
+it bounded, and 20 s at full depth and full rate stays finite with a peak of
+0.28.
+- `kMakeup` 0.74 brings the deeper notches back to unity: +1.08 dB before,
+−0.03 dB now, measured with a plucked note at the middle of the knobs.
+
+A steady tone now moves with the sweep: over six seconds at the same knob
+settings the level swings 3.1 dB at 500 Hz, 4.9 dB at 977 Hz and 7.8 dB at 2 kHz,
+where the eight-section version swung 0.0, 0.1 and 0.2 dB. Host time 33.8 → 47.9
+ns/frame, 2.4 KB of text and 0.6 KB of SRAM of the delay slot's 12 KB. The barber
+golden moved with it.
+
+`barber` 1.4-0.
+
 ## out of the band without a step
 
 The band that holds the four `elements` geometries met the morph with a hard
