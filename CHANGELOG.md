@@ -3,6 +3,25 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## irbody — 1.4-0
+
+- The unit is silent 40 ms after the input goes quiet, so it cannot leave a note
+  sounding. A body's own tail is 8 to 35 ms — the mode bank, the four combs (all
+  capped at 0.93) and the allpasses are gone well inside that — so anything still
+  audible after it is state being recited, not a body. Twenty milliseconds of
+  true digital silence now closes a gate over 10 ms, and it opens again the same
+  way; a held note or a release keeps it open, because the input is only exactly
+  zero once the amp EG of the synth has already taken the note down. Measured on
+  the host, the output was already at -334 dB ten seconds in, in every knob
+  position, so this changes nothing that was there; it guarantees the unit
+  cannot be the thing that hangs.
+- A bank that has gone non-finite is dropped instead of passed on: if an engine's
+  output leaves ±100 it is cleared, so a NaN in a feedback line cannot come back
+  with the next note.
+- The harness now measures channel width just after the input stops (a 1024
+  sample window) instead of over the tail: a unit that gates itself has no tail
+  to measure, and the width was being read off the decayed residue.
+
 ## elements — 1.1-0
 
 - DEPTH no longer leaves a note hanging. The ring time of the bank was

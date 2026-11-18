@@ -152,6 +152,17 @@ static int windowAttack() { return (int)((UNITKIND == 0 ? 0.01 : 0.05) * kRate);
 static int windowTail() { return (int)((UNITKIND == 0 ? 0.25 : 0.30) * kRate); }
 static const int kWindow = 4096;
 
+// Width is measured on the wet alone, and for an effect that means the moment
+// the input stops — but a unit may gate its own output when the input goes to
+// digital silence (irbody now does, 20 ms in), so this window starts inside
+// that gap and is short enough to end before the gate has shut.
+static int windowCorr() { return (int)((UNITKIND == 0 ? 0.25 : 0.255) * kRate); }
+// A knob that only moves the tail would be lost on a unit that gates itself
+// after the input stops, so the level half of the knob test is taken while the
+// input is still there.
+static int windowKnob() { return (int)(0.20 * kRate); }
+static int windowCorrLen() { return UNITKIND == 0 ? 4096 : 1024; }
+
 static void reportBands(const char *tag, const float *x, int at) {
   double db[kBands];
   spectrum(x + at, kWindow, db);
@@ -231,12 +242,12 @@ int main(int argc, char **argv) {
   // The width is measured on the wet alone, once the input has stopped: with
   // dry signal in the picture every channel looks the same by definition.
   runNominal(gKnobs > 3 ? 3 : -1, gKnobs > 3 ? gHi[3] : 0);
-  printf("corr %.3f\n", correlation(gOutL + windowTail(), gOutR + windowTail(), kWindow));
+  printf("corr %.3f\n", correlation(gOutL + windowCorr(), gOutR + windowCorr(), windowCorrLen()));
   {
     static float hl[kSamples], hr[kSamples];
-    highpassCopy(gOutL + windowTail(), hl, kWindow);
-    highpassCopy(gOutR + windowTail(), hr, kWindow);
-    printf("corr_hi %.3f\n", correlation(hl, hr, kWindow));
+    highpassCopy(gOutL + windowCorr(), hl, windowCorrLen());
+    highpassCopy(gOutR + windowCorr(), hr, windowCorrLen());
+    printf("corr_hi %.3f\n", correlation(hl, hr, windowCorrLen()));
   }
   unitNoteOff();
   reportBands("bands", gOut, windowAttack());
@@ -251,7 +262,7 @@ int main(int argc, char **argv) {
   spectrum(gOut + windowTail(), kWindow, baseT);
   const double gBaseA = rmsOf(gOut + windowAttack(), kWindow);
   const double gBaseT = rmsOf(gOut + windowTail(), kWindow);
-  const double gBaseL = rmsOf(gOut + (int)(1.2 * kRate), kWindow);
+  const double gBaseL = rmsOf(gOut + windowKnob(), kWindow);
   for (int k = 0; k < gKnobs; ++k) {
     double dbA[kBands], dbT[kBands], worst = 0;
     runNominal(k, gHi[k]);
@@ -265,7 +276,7 @@ int main(int argc, char **argv) {
     // both windows counts too.
     const double la = rmsOf(gOut + windowAttack(), kWindow);
     const double lt = rmsOf(gOut + windowTail(), kWindow);
-    const double ll = rmsOf(gOut + (int)(1.2 * kRate), kWindow);
+    const double ll = rmsOf(gOut + windowKnob(), kWindow);
     const double ra = fabs(20.0 * log10((la + 1e-9) / (gBaseA + 1e-9)));
     const double rt = fabs(20.0 * log10((lt + 1e-9) / (gBaseT + 1e-9)));
     const double rl = fabs(20.0 * log10((ll + 1e-9) / (gBaseL + 1e-9)));

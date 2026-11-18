@@ -57,6 +57,14 @@ constexpr int kAp0Len = 240;    // 5.0 ms allpass
 constexpr int kAp1Len = 96;     // 2.0 ms allpass
 constexpr int kPresetCount = irmodel::kPresetCount;
 constexpr int kFadeSamples = 4096;  // 85 ms crossfade on a switch
+// A body is not a reverb: its own tail is 8 to 35 ms. Twenty milliseconds of
+// true silence closes the gate over ten, so the slot cannot keep sounding after
+// the input is gone, whatever state it was left in.
+constexpr float kGateFloor = 1e-6f;
+constexpr int kGateHold = 960;            // 20 ms of digital silence
+constexpr float kGateStep = 1.f / 480.f;  // 10 ms ramp
+// A body never sums this loud; anything past it is a runaway, not a sound.
+constexpr float kBankLimit = 100.f;
 // Left and right read the same four lines a few samples apart: a body is one
 // object, so its modes stay in the middle, but its tail arrives at two points
 // of the corpus, and that difference is what a listener hears as size.
@@ -150,6 +158,8 @@ struct State {
   float damp_coef;
   float damp_lp;
   int ready;    // set once the first engine has been built
+  float gate;   // 0..1, silence gate at the output
+  int quiet;    // samples of true silence behind us
 };
 
 State s __sdram;
@@ -449,6 +459,17 @@ __attribute__((noinline)) void engineSample(int slot, Engine &e, float x,
 
   out_l = (mid + t_m) * e.level;
   out_r = (bank_r + kStereoTrim * e.tail_out_lp_s * e.tail_gain) * e.level;
+
+  // A bank that has gone non-finite — a NaN in a feedback line, a jump that
+  // pushed a mode past its own limit — would sit in the slot forever. The gate
+  // below would hide it, but it would be back with the next note, so it is
+  // dropped here instead.
+  if (!(out_l > -kBankLimit && out_l < kBankLimit) ||
+      !(out_r > -kBankLimit && out_r < kBankLimit)) {
+    clearEngine(e);
+    out_l = 0.f;
+    out_r = 0.f;
+  }
 }
 
 void updateDamping() {
@@ -493,6 +514,8 @@ void REVFX_INIT(uint32_t platform, uint32_t api) {
   s.damp_lp = 0.f;
   s.damp_lp_r = 0.f;
   s.ready = 0;
+  s.gate = 1.f;
+  s.quiet = 0;
 
   updateDamping();
   clearBuffers(0);
@@ -509,6 +532,22 @@ void REVFX_PROCESS(float *xn, uint32_t frames) {
 
   for (int i = 0; i < nframes; ++i) {
     const float in = 0.5f * (xn[2 * i] + xn[2 * i + 1]);
+
+    // A body is not a reverb. Its own tail is 8 to 35 ms, so anything still
+    // sounding 20 ms after the input went quiet is state being recited rather
+    // than a body: the gate shuts over 10 ms and the unit outputs silence until
+    // the next note. A release is never cut by this — the input is only exactly
+    // zero once the synth's own envelope has already taken the note down.
+    if (in < -kGateFloor || in > kGateFloor) {
+      s.quiet = 0;
+      s.gate += kGateStep;
+      if (s.gate > 1.f)
+        s.gate = 1.f;
+    } else if (++s.quiet > kGateHold && s.gate > 0.f) {
+      s.gate -= kGateStep;
+      if (s.gate < 0.f)
+        s.gate = 0.f;
+    }
 
     const int sa = s.active;
     float wl, wr;
@@ -535,8 +574,8 @@ void REVFX_PROCESS(float *xn, uint32_t frames) {
 
     s.damp_lp += (wl - s.damp_lp) * s.damp_coef;
     s.damp_lp_r += (wr - s.damp_lp_r) * s.damp_coef;
-    xn[2 * i] = fx_softclipf(0.05f, in + (s.damp_lp - in) * s.wet);
-    xn[2 * i + 1] = fx_softclipf(0.05f, in + (s.damp_lp_r - in) * s.wet);
+    xn[2 * i] = fx_softclipf(0.05f, s.gate * (in + (s.damp_lp - in) * s.wet));
+    xn[2 * i + 1] = fx_softclipf(0.05f, s.gate * (in + (s.damp_lp_r - in) * s.wet));
   }
 }
 

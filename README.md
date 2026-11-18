@@ -365,10 +365,10 @@ the notches into the classic jet sound.
 The wet signal is stereo now. Two points on a corpus do not hear the same
 thing: the tail is read from the four delay lines a few samples apart and goes
 through a long allpass on the difference, and the modes themselves take a
-quarter of a millisecond detour on the right. Measured over the tails: the two
-channels correlate between 0.46 and 0.99 depending on how diffuse the body is —
-a wood block is wide, a drum is a point — and the two average back to the level
-the unit had before.
+quarter of a millisecond detour on the right. How wide that is depends on the
+body — a wood block is wider than a drum — and the two average back to the level
+the unit had before. The harness measures the correlation on the 21 ms right
+after the input stops, `corr_hi` the same window above 2 kHz.
 
 The A knob is a continuum. It still picks the family, but between two bodies the
 damping, brightness, level and size glide from one into the next, so a violin
@@ -397,6 +397,13 @@ high frequencies die away faster than its low ones. All of that lives in
 still writes the responses out as WAV files in [`ir/`](ir) through
 [`tools/make_irs.cpp`](tools/make_irs.cpp), and those files are what the unit's
 levels were measured against.
+
+A body ends when the sound does: the unit's own tail is 8 to 35 ms, so it is the
+one place here where a state left in the slot could be heard after the note. It
+cannot be: 20 ms of true digital silence closes the output over 10 ms and opens
+it the same way. A held note, a release, and a delay tail in front of it all
+keep the gate open, because the input is only exactly zero once the amp EG of the
+synth has already taken the note down.
 
 | Control | Function |
 | --- | --- |

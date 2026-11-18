@@ -61,7 +61,9 @@ how fast and how deep it feels is a judgement.
 ## 5. The effects in context
 
 * `irbody`: does the stereo body survive the mono sum the NTS-1 makes on its own
-  output? It should; the two channels average back to the old level.
+  output? It should; the two channels average back to the old level. Play a note
+  and let go: the body must be gone with the note — the unit gates its own output
+  20 ms after the input goes quiet, so a tail that stays is not the unit.
 * `lpg`: the gate should close on the *note*, not on the oscillator's waveform.
   Play a slow attack and a staccato note.
 * `elements` and `reso`: full wet, and check that a high note does not thin out.
