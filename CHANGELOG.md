@@ -3,6 +3,29 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## barber — the allpass had the wrong sign
+
+`allpassCoef` returned `(1 - t)/(1 + t)`. The first-order allpass in this unit is
+`y = x1 + c(x - y1)`, whose pole sits at `-c`, so the corner is at `fc` only when
+`c` is negative and close to −1; that form put the pole at −1 and mirrored the
+corner to `fs/2 - fc`. Every notch of the cascade sat in the top octave and the
+sweep moved nothing in the band.
+
+- Measured across 100 Hz .. 4 kHz at a still phase: the shipped unit (eight
+  sections) and 1.4-0 (sixteen) both had **zero notches** in the band, the
+  response flat within 0.1 and 1.1 dB. A steady tone moved by 0.0, 0.0 and 0.2 dB
+  at 500, 977 and 2000 Hz over 30 s. That, and not the depth of the sweep, is why
+  the slot read as a phase drift.
+- `(t - 1)/(t + 1)` fixes it: six notches between 100 Hz and 4 kHz at a still
+  phase — 172, 532, 938, 1436, 2126 and 3238 Hz, 34, 25, 22, 20, 20 and 22 dB
+  deep — and the same three tones now swing 58.7, 50.0 and 54.8 dB as the notches
+  pass. Eight sections with the fix give two notches at 6 dB, which is the mix
+  ceiling 1.4-0 removed.
+- `kMakeup` 0.80 keeps the deeper notches at unity: −0.11 dB at the middle of the
+  knobs, measured with a plucked note.
+
+Versions: `barber` 1.5-0.
+
 ## barber — twice the notches, deeper notches
 
 The barberpole had eight sections and a dry/wet mix applied twice, so its notches
@@ -25,11 +48,11 @@ it bounded, and 20 s at full depth and full rate stays finite with a peak of
 - `kMakeup` 0.74 brings the deeper notches back to unity: +1.08 dB before,
 −0.03 dB now, measured with a plucked note at the middle of the knobs.
 
-A steady tone now moves with the sweep: over six seconds at the same knob
-settings the level swings 3.1 dB at 500 Hz, 4.9 dB at 977 Hz and 7.8 dB at 2 kHz,
-where the eight-section version swung 0.0, 0.1 and 0.2 dB. Host time 33.8 → 47.9
-ns/frame, 2.4 KB of text and 0.6 KB of SRAM of the delay slot's 12 KB. The barber
-golden moved with it.
+The movement measured here, 3 to 8 dB at a steady tone, came from the feedback
+loop and not from the comb: the notches were still above the band, and 1.5-0 is
+what put them in it — see that entry for the numbers that hold. Host time 33.8 →
+47.9 ns/frame, 2.4 KB of text and 0.6 KB of SRAM of the delay slot's 12 KB. The
+barber golden moved with it.
 
 `barber` 1.4-0.
 

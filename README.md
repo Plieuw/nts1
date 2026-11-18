@@ -376,7 +376,7 @@ The sweep covers 40 Hz .. 6.4 kHz of all-pass corner, which puts the lowest notc
 at a tenth of the corner and the highest at 3.7 times it: every notch travels
 7.3 octaves on its way up, 44% more than the five it used to cross. Sixteen
 sections and a wider corner cost 42% of the unit's host time (33.8 → 47.9
-ns/frame), which is still the cheapest thing in this collection.
+ns/frame), which is still among the cheapest things in this collection.
 
 | Control | Function |
 | --- | --- |
@@ -393,10 +393,20 @@ than a barberpole. The mix is fixed because the shifted DEPTH control is needed
 for the notch count: adding or removing a section starts or empties that
 section's state, so the count can be turned while it runs without a click.
 
-Measured with a steady tone over six seconds, the level at that tone swings with
-the sweep: 3.1 dB at 500 Hz, 4.9 at 977 and 7.8 at 2 kHz, where the eight-section
-version swung 0.0, 0.1 and 0.2 dB at the same tones. At the middle of the knobs
-the unit is −0.03 dB against the dry signal, measured with a plucked note.
+**The sweep had a sign error until 1.5-0.** The first-order allpass here is
+`y = x1 + c(x - y1)`, whose pole sits at `-c`, so its corner is at `fc` only when
+`c` is negative and close to −1. The coefficient was `(1 - t)/(1 + t)`, which puts
+the pole at −1 and mirrors the corner to `fs/2 - fc`: every notch of the cascade
+sat in the top octave. Measured across 100 Hz .. 4 kHz the response was flat to
+within 0.1 dB, and a steady tone moved by 0.0, 0.0 and 0.2 dB at 500, 977 and
+2000 Hz — there was no comb in the band to move. `(t - 1)/(t + 1)` is the same
+sweep with the pole where it belongs: six notches between 100 Hz and 4 kHz (172,
+532, 938, 1436, 2126 and 3238 Hz, 20 to 34 dB deep at a still phase), and a steady
+tone now swings 50 to 59 dB as they pass. That, and not the depth of the sweep,
+is why this slot read as a phase drift.
+
+At the middle of the knobs the unit is −0.11 dB against the dry signal, measured
+with a plucked note.
 
 ### irbody — reverb effect (instrument bodies)
 

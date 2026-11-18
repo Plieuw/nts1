@@ -44,7 +44,7 @@ constexpr float kSweepOct = 7.32f;
 // The 50/50 notch mix is 2.5 dB down on the dry signal on average, and an effect
 // that drops the level is a level change, not a phaser: this brings it back to
 // unity at the middle of the knobs, where the sweep spends its time.
-constexpr float kMakeup = 0.74f;
+constexpr float kMakeup = 0.80f;
 constexpr float kPi = 3.14159265358979f;
 
 struct Stage {
@@ -103,9 +103,15 @@ inline float pow2f(float x) {
 
 inline float expf_fast(float x) { return pow2f(x * 1.44269504f); }
 
+// The first-order allpass below is y = x1 + c (x - y1), whose pole sits at -c:
+// the corner is at fc only when c is negative and close to -1, which is what
+// (t - 1)/(t + 1) gives. The mirrored form (1 - t)/(1 + t) puts the pole at -1
+// instead, so its corner lands at fs/2 - fc: every notch of the cascade sat in
+// the top octave, and the sweep had almost nothing to move in the band. That is
+// what the unit was doing until 1.5-0, and it is why it read as a phase drift.
 inline float allpassCoef(float fc) {
   const float t = fx_tanpif(clipminmaxf(0.0001f, fc / kFs, 0.45f));
-  return (1.f - t) / (1.f + t);
+  return (t - 1.f) / (t + 1.f);
 }
 
 void updateRate() {
