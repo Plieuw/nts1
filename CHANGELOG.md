@@ -20,7 +20,7 @@ sub output now gets the same samples there.
 - Host cost, five alternating passes against the previous build in one session,
   minimum: 30.2 → 16.3 ns per frame playing, 2.5 → 1.6 idle.
 - Size: 3604 → 3032 bytes of the slot's 6 KB, of which the SRAM is 752 → 356
-  bytes.
+  bytes. The CI's gcc 5.4 build, which is what ships: 3360 → 2848 bytes.
 
 Versions: `elements` 1.4-0. Its manifest still said 1.1-0 while the notes for the
 earlier passes named 1.3-0: those passes bumped the `api` line instead of the
