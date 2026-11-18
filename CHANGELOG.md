@@ -3,6 +3,26 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## out of the band without a step
+
+The band that holds the four `elements` geometries met the morph with a hard
+edge, and at 220 Hz that edge was a step of 7.2 dB between two neighbouring knob
+counts — a click while turning, not a detent.
+
+- Inside the band nothing changed: 0, 341, 682 and 1023 play the string, the
+  membrane, the plate and the bell exactly, and ten counts either side of each do
+  too.
+- Outside it the geometry is now eased back into the morph over the next ten
+  counts by a smoothstep, which leaves the band and re-enters the morph with zero
+  slope. Over the whole B sweep the largest change between neighbouring counts is
+  3.6 dB, against 7.6 dB for the hard edge; the morph alone reaches 2.5 dB per
+  count at its steepest with no band at all.
+- 900 of the 1024 knob positions are bit-identical to the morph without any of
+  this; the other 124 are the band and its return.
+
+`elements` 1.7-0. `irbody`'s band still has its hard edge: its worst step is 1.65
+dB over the whole sweep, so it was not worth the extra counts there.
+
 ## snap to the model
 
 Four geometries on `elements` and eight bodies on `irbody` are single points on a

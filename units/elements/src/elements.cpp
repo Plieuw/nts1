@@ -41,20 +41,37 @@ constexpr float kBankLimit = 100.f;
 
 // The four geometries are single points on a continuum and a knob has no
 // detents, so landing on the membrane by hand is luck. Within 3% of the way
-// between two of them — ten counts of the knob — the knob snaps to the model
-// and the object is exact: string, membrane, plate, bell. Outside that band
-// nothing changes, the morph is what it was, and the bands are far apart they
-// never meet. Three percent of the knob's travel would swallow a quarter of it;
-// the measurement (tools/levels.cpp, one plucked note) put the step at such an
-// edge at up to 7.7 dB, while these ten counts cost about a decibel.
-constexpr float kSnap = 0.01f;
+// between two of them — ten counts of the knob — the knob holds the model
+// exactly: string, membrane, plate, bell. Outside that band the morph is picked
+// up again over the next ten counts by a smoothstep, so the value never jumps:
+// a hard edge here moved the level by up to 7.2 dB from one count to the next
+// where a mode sits on the note, which is a click and not a detent.
+constexpr float kSnap = 0.01f;    // exact at the model within this much geometry
+constexpr float kReturn = 0.01f;  // and eased back into the morph over the next
+
+// 0..1 to 0..1 with zero slope at both ends, so the band meets the morph without
+// a corner on either side.
+inline float smoothstep01(float x) {
+  if (x <= 0.f)
+    return 0.f;
+  if (x >= 1.f)
+    return 1.f;
+  return x * x * (3.f - 2.f * x);
+}
 
 inline float snapGeometry(float v) {
   for (int i = 0; i <= 3; ++i) {
     const float p = (float)i * (1.f / 3.f);
     const float d = v - p;
-    if (d <= kSnap && d >= -kSnap)
+    const float ad = (d < 0.f) ? -d : d;
+    if (ad >= kSnap + kReturn)
+      continue;
+    if (ad <= kSnap)
       return p;
+    // Past the band the offset grows from nothing to the whole distance over the
+    // return, and lands exactly on v where that ends.
+    const float back = (kSnap + kReturn) * smoothstep01((ad - kSnap) / kReturn);
+    return p + ((d < 0.f) ? -back : back);
   }
   return v;
 }

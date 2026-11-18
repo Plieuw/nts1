@@ -342,14 +342,15 @@ Instruments Elements, not a port: a modulation effect on the NTS-1 gets two
 knobs and no note information, so the pitch is set by hand here.
 
 Four points on the B knob are the four objects themselves: 0, 341, 682 and 1023.
-Within 3% of the way between two of them — ten counts — the knob snaps to the
-nearest model, so the membrane can be found by hand and is exactly the membrane,
-and outside that band the morph is untouched. Ten counts, not 3% of the knob: the
-step at the edge of a band is the morph the band swallows, and over the whole B
-sweep the ten counts move 60 of 1024 positions by up to 7.2 dB at 220 Hz (a note
-sitting on a mode, where the morph is steepest) and by about a decibel elsewhere;
-31 counts, a quarter of the knob's morph, would have swallowed a quarter of the
-travel at up to 7.7 dB.
+Within 3% of the way between two of them — ten counts — the knob plays that model
+exactly, so the membrane can be found by hand and is exactly the membrane. Past
+that band the morph is picked up again over the next ten counts by a smoothstep,
+which leaves the band and re-enters the morph with zero slope, so the level never
+steps: over the whole B sweep with one plucked note at 220 Hz the largest change
+between neighbouring knob counts is 3.6 dB, against 7.6 dB for a hard edge — and
+the morph alone, with no band at all, reaches 2.5 dB per count where a mode sits
+on the note. Everything beyond the return — 900 of the 1024 positions — is
+bit-identical to that plain morph.
 
 The instrument is mono, so this unit renders one bank. The slot is handed a main
 and a sub buffer, but an instrument with one oscillator has one signal, and the
