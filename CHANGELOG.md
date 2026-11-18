@@ -3,6 +3,29 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## elements — 1.1-0
+
+- DEPTH no longer leaves a note hanging. The ring time of the bank was
+  `0.35 s * 2^(3g)` with `g` the knob from string (0) to bell (3), so the bell end
+  reached 179 seconds: not a bell but a note with no end in sight, and since a
+  modulation effect sits after the amp EG of the synth, nothing downstream would
+  ever cut it. Turning DEPTH up under a ringing note left it sounding. The bell
+  end is now 2 s (`0.35 s * 2^(0.84g)`), the membrane 0.63 s and the plate 1.1 s;
+  a held note still fills the bank, so the pad at the top of the range stays.
+- A shorter ring also makes a bank louder, since a mode stores about (1-r^2) of
+  what is fed into it: on its own the new decay time raised the level 19 dB. The
+  input gain now scales with the decay time (with 7.92 s, the old ring time in
+  the middle of the range, as the reference), so the loudness stays where it was
+  and DEPTH is a knob about the tail and nothing else.
+- The harness prints `tail_db` and `tail_db_top` for the effect units: the level
+  over the last second of a ten second render with the input gone after a quarter
+  of a second, relative to the level while the input was there, with the knobs in
+  the middle and with them at the top. `tests/run.sh` fails above -60 and -12 dB;
+  the top limit is the looser one because `reso` rings for 5 s by design and
+  measures -16 dB there. The old `elements` measured -3.3 and +1.4 dB; it now
+  measures -85.5 and -36.5 dB.
+- The ratios, the morph and the exciter are untouched. Only the decay.
+
 ## resonator — 1.6-0
 
 - A released key ends the note. The bank used to ring on after note-off — at the

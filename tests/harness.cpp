@@ -340,6 +340,38 @@ int main(int argc, char **argv) {
     const double after = rmsOf(rel + (int)(0.30 * kRate), kWindow);
     printf("release_db %.1f\n", 20.0 * log10((after + 1e-9) / (before + 1e-9)));
   }
+#else
+  // An effect is not gated: it sits after the amp EG of the synth, so a bank
+  // that keeps ringing is heard after the key is gone. Ten seconds, with the
+  // input stopping at a quarter of a second, and the question is what is left
+  // in the last second. This is the measurement that would have caught DEPTH in
+  // elements leaving a note hanging.
+  // The knob that makes a bank ring longest is the one at the top of its range,
+  // and that is where a tail that never ends shows up, so both the middle and
+  // the top are measured.
+  for (int pass = 0; pass < 2; ++pass) {
+    const int total = (int)(10.0 * kRate);
+    const int d0 = (int)(0.05 * kRate), e0 = (int)(9.0 * kRate);
+    double during = 0.0, end = 0.0;
+    unitInit();
+    setNominal();
+    if (pass == 1)
+      for (int k = 0; k < gKnobs; ++k) unitParam(k, gHi[k]);
+    unitNote(60);
+    for (int at = 0; at < total; at += kSamples) {
+      const int n = (total - at < kSamples) ? total - at : kSamples;
+      renderInto(gOut, n);
+      for (int i = 0; i < n; ++i) {
+        const int p = at + i;
+        const double v2 = (double)gOut[i] * gOut[i];
+        if (p >= d0 && p < d0 + kWindow) during += v2;
+        if (p >= e0 && p < e0 + kWindow) end += v2;
+      }
+    }
+    const double dr = sqrt(during / kWindow), er = sqrt(end / kWindow);
+    printf("%s %.1f\n", pass == 0 ? "tail_db" : "tail_db_top",
+           20.0 * log10((er + 1e-9) / (dr + 1e-9)));
+  }
 #endif
 
   return 0;

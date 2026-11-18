@@ -495,9 +495,15 @@ without having to think about it:
   kilobytes of code, out of the 6 or 12 KB a slot gets. Every unit does its own
   exponentials, square roots and sines with the SDK's tables or a short
   polynomial instead.
-* **Tails end.** Ten seconds after the last note every tail has fallen below
-  -70 dB (the longest are `reso` at its 5 s ring time and `elements` at its
-  bell end, which is a very quiet but very long sustain by design).
+* **Tails end.** Ten seconds after the input stops, the effects are at least
+  60 dB down with their knobs in the middle, and at least 12 dB down with the
+  knobs at the top, where a bank rings longest (`reso` at its 5 s ring time is
+  the -16 dB case). The harness prints both figures (`tail_db`, `tail_db_top`)
+  for the effects — the level over the last second of a ten second render,
+  against the level while the input was there — and `tests/run.sh` fails above
+  those limits. A ring that never ends measures at or above the note itself:
+  `elements` reached a 179 s ring time at the bell end and measured +1 dB there
+  before this change. Its bell end is 2 s now, and -36 dB at the top.
 
 Measured on the host (x86, gcc 10.3, minimum of five pinned runs, one 64 frame
 block at 48 kHz is 1.333 ms); the numbers are a comparison between the units,

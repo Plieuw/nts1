@@ -7,6 +7,8 @@ BAND_TOL = 1.5      # dB per third-octave band
 LEVEL_TOL = 0.15    # relative, for rms and peak
 KNOB_MOVES = 2.0    # dB a knob that used to move must still move
 RELEASE_TOL = 10.0  # dB a released note may ring louder than it was measured
+TAIL_DB = -60.0     # ten seconds on, the tail with the knobs in the middle
+TAIL_DB_TOP = -12.0  # ... and with the knobs at the top, where a bank rings longest
 
 
 def load(path):
@@ -44,6 +46,12 @@ def main(golden, current):
                 problems.append(
                     "300 ms after note-off the unit is %.1f dB below the held level, was %.1f"
                     % (cv[0], gv[0]))
+        elif key in ("tail_db", "tail_db_top"):
+            limit = TAIL_DB if key == "tail_db" else TAIL_DB_TOP
+            if cv[0] > limit:
+                problems.append(
+                    "%s %.1f dB ten seconds after the input stopped (limit %.0f)"
+                    % (key, cv[0], limit))
         elif key == "fuzzpeak":
             if cv[0] > 0.99:
                 problems.append("fuzz peak %.3f clips" % cv[0])

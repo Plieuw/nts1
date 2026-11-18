@@ -132,12 +132,22 @@ void updateCoefficients() {
 
   const float f0 = 40.f * pow2f(5.644f * s.pitch);   // 40 Hz .. 2 kHz
   // Decay time constant of the fundamental. The range is wide on purpose: the
-  // string end damps away in a third of a second, the bell end rings for
-  // minutes, and damping shortens the higher modes on top of that. The very
-  // top of the range is a sustain rather than a bell, which is what makes the
-  // plate and bell end usable as a pad when you hold a note.
-  const float tau = 0.35f * pow2f(3.f * g);
+  // string end damps away in a third of a second, the bell end rings for a
+  // couple of seconds, and damping shortens the higher modes on top of that.
+  //
+  // The bell end used to be three minutes, which is not a bell but a note with
+  // no end in sight: a modulation effect sits after the amp EG of the synth, so
+  // whatever is left in the bank is heard after the key is gone, and opening
+  // DEPTH left a note hanging with nothing downstream to stop it. A held note
+  // still fills the bank continuously, which is all the pad at this end needs.
+  const float tau = 0.35f * pow2f(0.84f * g);
   const float damp = 0.30f - 0.05f * g;              // harder geometries ring longer
+  // A mode stores about (1-r^2) of what is fed into it, so a shorter ring is
+  // also a louder one: the shorter tau above made the unit 19 dB louder on its
+  // own. The input gain is scaled with the decay time, with 7.92 s — the ring
+  // time in the middle of the depth range — as the reference, which puts the
+  // loudness back where it was and leaves DEPTH a knob about the tail.
+  const float excite_gain = tau * (1.f / 7.92f);
 
   int active = 0;
 
@@ -164,7 +174,7 @@ void updateCoefficients() {
 
     s.a1[k] = 2.f * r * fx_cosf(clipminmaxf(0.f, f / kFs, 0.99f));
     s.a2[k] = -r * r;
-    s.b0[k] = 0.5f * (1.f - r * r) / (1.f + 0.5f * (float)k);
+    s.b0[k] = 0.5f * excite_gain * (1.f - r * r) / (1.f + 0.5f * (float)k);
   }
 
   s.active_modes = active;

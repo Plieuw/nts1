@@ -11,3 +11,5 @@ knob0 139.9
 knob1 10.3
 fuzzpeak 0.850
 fuzznan 0
+tail_db -106.7
+tail_db_top -16.0

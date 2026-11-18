@@ -65,6 +65,8 @@ how fast and how deep it feels is a judgement.
 * `lpg`: the gate should close on the *note*, not on the oscillator's waveform.
   Play a slow attack and a staccato note.
 * `elements` and `reso`: full wet, and check that a high note does not thin out.
+  On `elements`, turn DEPTH up while a note rings: the ring should follow the
+  knob and then end with the note, not hang under the next one.
 * `barber`: at the highest feedback setting it should still not run away.
 
 ## What to write down
