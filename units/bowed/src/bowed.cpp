@@ -3,7 +3,10 @@
 //
 // Every other unit here answers a hit. This one keeps its energy going: a delay
 // loop of one period is fed by a bow that rubs it, and the loop's losses decide
-// how long it takes to speak and how it dies when the bow leaves the string.
+// how long it takes to speak. When the key comes up the bow leaves at once: the
+// amp EG of the NTS-1 sits after the oscillator slot and owns the tail, so the
+// unit must not hold one of its own, or the release knob would be fighting a
+// string that keeps ringing under it.
 // Four voices, because a chord of sustained notes is the point.
 //
 // The API is the oscillator one, so the knobs are the six parameters in
@@ -23,6 +26,10 @@ constexpr int kMaxPeriod = 1024;      // 47 Hz at 48 kHz
 constexpr float kFs = 48000.f;
 constexpr float kPi = 3.14159265358979f;
 constexpr float kDcCoef = 6.2831853f * 12.f / 48000.f;  // 12 Hz
+// How fast the bow leaves when the key does. Not a musical envelope: the amp EG
+// of the synth is the envelope, this only has to stop the unit — about -60 dB in
+// 28 ms, short enough that no release setting has to fight it.
+constexpr float kReleaseTau = 0.004f;
 
 // A model is the loop's character: how lossy it is, where its body sits, and how
 // much the bow's own noise gets through. The four are a string, a struck-but-
@@ -73,6 +80,7 @@ struct State {
   float level;
   float attack;     // 0..1, how long the bow takes to catch
   float tune;
+  float rel_coef;   // per sample fall of the bow when the key comes up
   float noise;      // the bow's own noise, one state
   float lfo;
 
@@ -183,6 +191,7 @@ void OSC_INIT(uint32_t platform, uint32_t api) {
   s.noise = 0.f;
   s.pressure_base = 0.55f;
   s.lfo = 0.f;
+  s.rel_coef = 1.f - arc_pow2f(-1.f / (kReleaseTau * kFs) * 6.9f);
   updateBody();
   for (int i = 0; i < kVoices; ++i)
     resetVoice(s.voice[i]);
@@ -216,10 +225,11 @@ void OSC_CYCLE(const user_osc_param_t *const params, int32_t *yn,
       if (!v.held && v.env < 1e-4f)
         continue;
 
-      // The bow: pressure comes up over the attack, and lets go when the key
-      // does, which is the only thing a note-off can mean to a bowed note.
+      // The bow: pressure comes up over the attack, and when the key comes up
+      // the bow leaves at once. The loop would hold the note for seconds, but
+      // the amp EG of the synth comes after this slot and owns the tail.
       const float target = v.held ? 1.f : 0.f;
-      v.env += (target - v.env) * (v.held ? v.env_coef : v.env_coef * 2.f);
+      v.env += (target - v.env) * (v.held ? v.env_coef : s.rel_coef);
 
       // A delay loop with any asymmetric excitation in it collects a DC offset,
       // and DC in a string is headroom spent on nothing. One pole at 12 Hz takes
@@ -278,6 +288,7 @@ void OSC_NOTEON(const user_osc_param_t *const params) {
 // The oscillator API says which note was released, but the first version of this
 // unit never kept the pitch of a voice, so any release lets the whole chord go.
 // That is the one thing about four voices that a single bowed note cannot show.
+// Either way the bow leaves immediately: the tail belongs to the amp EG.
 void OSC_NOTEOFF(const user_osc_param_t *const params) {
   (void)params;
   for (int i = 0; i < kVoices; ++i)

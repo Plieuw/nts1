@@ -34,3 +34,4 @@ model15 11.2
 model16 0.0
 fuzzpeak 0.920
 fuzznan 0
+release_db -159.4

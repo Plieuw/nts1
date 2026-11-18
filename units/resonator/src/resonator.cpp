@@ -39,10 +39,17 @@
  * low ones unless the brightness knob says otherwise.
  *
  * Four voices, because the oscillator API hands out note-on and note-off: a new
- * note takes a free voice, a note that is still ringing is not cut off by the
- * next one, and the fifth note steals the oldest. A voice keeps the pitch it was
- * struck at — a struck object does not glide — except for the newest one, which
- * follows the keyboard so a solo line still bends.
+ * note takes a free voice instead of cutting off the note before it, and the
+ * fifth note steals the oldest. A voice keeps the pitch it was struck at — a
+ * struck object does not glide — except for the newest one, which follows the
+ * keyboard so a solo line still bends.
+ *
+ * A released key ends the note. The object rings for as long as the key is down
+ * and then fades out in a few milliseconds, because the amp EG of the NTS-1 sits
+ * after the oscillator slot: its release knob is the tail the player asked for,
+ * and a bank that kept ringing under it would make that knob a lie. The bank of
+ * a long model can hold energy for half a minute at the top of the A knob, so
+ * without this the notes of a chord would pile up on top of the next ones.
  *
  * A-knob (SHAPE)   decay, 0.1 s .. 12 s
  * B-knob (SHIFT)   brightness: how long the high modes live, and how open the
@@ -75,6 +82,12 @@ constexpr float kStrikeGain = 0.0018f;
 
 // The attack of a note peaks at about this, before the level knob.
 constexpr float kOutSum = 0.008f;
+
+// How long a released key takes to be gone. This is not an envelope: the amp EG
+// of the synth owns the tail, so the unit only has to get out of its way — fast
+// enough that no release setting has to fight it, slow enough that it is not a
+// click. About -60 dB in 28 ms.
+constexpr float kReleaseTau = 0.004f;
 
 // The ratio sets. A model is a set of modes plus the way that object behaves
 // under the knobs; together they are the palette of the unit. Each one is an
@@ -246,6 +259,7 @@ struct Voice {
   int note_id;   // key that started it, 0..127
   uint32_t age;  // larger is older, for stealing
   bool held;     // key still down
+  float rel;     // 1 while held, then the fade of a released key
 
   // The strike.
   float exc_coef;
@@ -270,6 +284,7 @@ struct State {
   Voice voice[kVoices];
   uint32_t age;
   uint32_t rng;
+  float rel_coef;  // per sample decay of a released key's fade
 };
 
 State s;
@@ -295,6 +310,10 @@ void silenceAll() {
 bool voiceQuiet(const Voice &v) {
   if (v.exc_env > 1e-7f)
     return false;
+  // A released voice is over when its fade is over, whatever the bank still
+  // holds: a bell let go of is not still sounding.
+  if (!v.held && v.rel < 1e-5f)
+    return true;
   float mag = 0.f;
   for (int k = 0; k < v.modes; ++k)
     mag += fabsf(v.y1[k]) + fabsf(v.y2[k]);
@@ -401,13 +420,16 @@ int allocateVoice(int note_id) {
     if (s.voice[i].held && s.voice[i].note_id == note_id)
       return i;
 
-  // A key that has been released first, and of those the one that was struck
-  // longest ago: a voice that has rung for a while is the least missed.
+  // A key that has been released first, and of those the one whose fade is
+  // furthest along (then the one struck longest ago): taking a voice that is
+  // still fading would cut it and click.
   int released = -1;
   for (int i = 0; i < kVoices; ++i) {
     if (s.voice[i].held)
       continue;
-    if (released < 0 || s.voice[i].age < s.voice[released].age)
+    if (released < 0 || s.voice[i].rel < s.voice[released].rel ||
+        (s.voice[i].rel == s.voice[released].rel &&
+         s.voice[i].age < s.voice[released].age))
       released = i;
   }
   if (released >= 0)
@@ -430,6 +452,7 @@ void strike(int note_id, float fine) {
   v.note_id = note_id;
   v.age = ++s.age;
   v.held = true;
+  v.rel = 1.f;
   v.exc_env = 1.f;   // the strike: one burst, from here the bank rings alone
 }
 
@@ -457,7 +480,9 @@ void render(q31_t *__restrict y, const uint32_t frames) {
   for (int i = 0; i < kVoices; ++i) {
     quiet[i] = voiceQuiet(s.voice[i]);
     if (quiet[i]) {
-      if (s.voice[i].exc_env > 0.f)
+      // A bank whose strike never started, or whose key is up and whose fade is
+      // over, has nothing left worth keeping.
+      if (s.voice[i].exc_env > 0.f || !s.voice[i].held)
         clearBank(s.voice[i]);
     } else {
       ++live;
@@ -519,7 +544,14 @@ void render(q31_t *__restrict y, const uint32_t frames) {
         sum = 0.f;
       }
 
-      acc += sum * v.out_gain;
+      // The key owns the note: a released voice fades out here in a few
+      // milliseconds and the amp EG of the synth does the rest.
+      float gain = v.out_gain;
+      if (!v.held) {
+        gain *= v.rel;
+        v.rel *= s.rel_coef;
+      }
+      acc += sum * gain;
     }
 
     *y++ = f32_to_q31(osc_softclipf(0.08f, acc * mix));
@@ -547,6 +579,7 @@ void OSC_INIT(uint32_t platform, uint32_t api) {
   s.level = 0.8f;
   s.tune = 0.f;
   s.age = 0;
+  s.rel_coef = arc_expneg(1.f / (kReleaseTau * kFs));
 
   s.rng = 0x9E3779B9u ^ osc_mcu_hash();
   if (s.rng == 0u)
@@ -557,6 +590,7 @@ void OSC_INIT(uint32_t platform, uint32_t api) {
     v.note_id = 60;
     v.age = 0;
     v.held = false;
+    v.rel = 1.f;
     v.modes = 0;
     voiceCoefficients(v, 261.63f, 60.f);   // middle C, until a note arrives
     clearBank(v);
@@ -592,12 +626,15 @@ void OSC_NOTEON(const user_osc_param_t *const params) {
 }
 
 void OSC_NOTEOFF(const user_osc_param_t *const params) {
-  // The key comes up, the object keeps ringing: the voice is free for the next
-  // note, but nothing is cut short here.
+  // The key comes up and the note ends: the voice starts its fade here and the
+  // amp EG of the synth takes over from there. The voice is free for the next
+  // note as soon as the fade is over, which is a few milliseconds.
   const int note_id = (int)(params->pitch >> 8);
   for (int i = 0; i < kVoices; ++i)
-    if (s.voice[i].held && s.voice[i].note_id == note_id)
+    if (s.voice[i].held && s.voice[i].note_id == note_id) {
       s.voice[i].held = false;
+      s.voice[i].rel = 1.f;
+    }
 }
 
 void OSC_MUTE(const user_osc_param_t *const params) {

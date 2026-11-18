@@ -243,6 +243,7 @@ int main(int argc, char **argv) {
   reportBands("bands_tail", gOut, windowTail());
   unitNoteOff();
 
+
   // Every knob has to do something: the biggest band that moves when it goes
   // from the middle to the top of its range.
   double baseA[kBands], baseT[kBands];
@@ -317,5 +318,29 @@ int main(int argc, char **argv) {
     printf("fuzzpeak %.3f\n", pk);
     printf("fuzznan %d\n", nan);
   }
+
+#if UNITKIND == 0
+  // What a released key leaves behind: half a second with the key down, then
+  // half a second with it up, both at the nominal settings. The amp EG of the
+  // synth comes after the oscillator slot and owns the tail, so a unit that
+  // keeps ringing here is playing under the release knob. An oscillator that is
+  // meant to run free (a noise source) measures near 0 dB and that is its
+  // answer, not an accident: the number records what the unit does, and
+  // compare.py only lets it grow by 10 dB.
+  {
+    static float held[kSamples], rel[kSamples];
+    const int half = (int)(0.5 * kRate);
+    unitInit();
+    setNominal();
+    unitNote(60);
+    renderInto(held, half);
+    unitNoteOff();
+    renderInto(rel, half);
+    const double before = rmsOf(held + half - kWindow, kWindow);
+    const double after = rmsOf(rel + (int)(0.30 * kRate), kWindow);
+    printf("release_db %.1f\n", 20.0 * log10((after + 1e-9) / (before + 1e-9)));
+  }
+#endif
+
   return 0;
 }

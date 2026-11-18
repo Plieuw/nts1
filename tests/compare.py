@@ -6,6 +6,7 @@ import sys
 BAND_TOL = 1.5      # dB per third-octave band
 LEVEL_TOL = 0.15    # relative, for rms and peak
 KNOB_MOVES = 2.0    # dB a knob that used to move must still move
+RELEASE_TOL = 10.0  # dB a released note may ring louder than it was measured
 
 
 def load(path):
@@ -38,6 +39,11 @@ def main(golden, current):
         elif key in ("corr", "corr_hi"):
             if abs(cv[0] - gv[0]) > 0.04:
                 problems.append("channel correlation %.3f, was %.3f" % (cv[0], gv[0]))
+        elif key == "release_db":
+            if cv[0] > gv[0] + RELEASE_TOL:
+                problems.append(
+                    "300 ms after note-off the unit is %.1f dB below the held level, was %.1f"
+                    % (cv[0], gv[0]))
         elif key == "fuzzpeak":
             if cv[0] > 0.99:
                 problems.append("fuzz peak %.3f clips" % cv[0])

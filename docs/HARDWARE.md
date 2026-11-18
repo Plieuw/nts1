@@ -21,6 +21,11 @@ full range, then release.
 | Parameter changes are smooth | a `zip` per knob movement means a coefficient is being recomputed per block without smoothing |
 | The last note does not hang | a tail that never ends is a filter that is not losing energy |
 
+Release a key with the synth's Release turned up: the note must follow the amp EG
+and not ring on under it. `resonator` with A fully open is the test — a bowl or a
+gong holds more than half a minute of energy at that setting, so a unit that keeps
+a tail of its own is heard at once as a note that outlives the key.
+
 The two units to watch are `bowed` with four notes held (16 KB of delay memory
 and four voices) and `irbody` while the A knob is being turned (a body change
 runs an 85 ms crossfade from the other engine slot).

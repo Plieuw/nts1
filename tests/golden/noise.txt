@@ -17,3 +17,4 @@ knob6 23.6
 knob7 12.8
 fuzzpeak 0.920
 fuzznan 0
+release_db 4.2

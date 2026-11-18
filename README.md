@@ -74,6 +74,13 @@ where that chain does the most for it.
 | DELAY | mod | `barber` | a phaser belongs before the reverb, and it needs the dry/wet knob that only a delay or reverb unit gets; a modulation effect has no shift-depth parameter |
 | REVERB | delay | `irbody` | a space belongs at the end of the chain, and a reverb unit gets the same 12 KB of code, 2.4 MB of SDRAM and shift-depth mix as a delay unit |
 
+One consequence of that chain is worth saying out loud, because it decides how
+the units behave: only the OSC slot is released at all. When a key comes up, the
+amp EG closes on whatever the oscillator slot produced, and the effect slots
+simply see less signal. So `resonator` and `bowed` stop themselves within a few
+milliseconds of note-off and leave the tail to the EG's release knob; a unit that
+kept its own tail would keep playing under a knob that says it stopped.
+
 ## The units
 
 ### noise — oscillator
@@ -207,8 +214,11 @@ over the keyboard — the measured 7:1 spread between the bottom and the top of 
 range comes down to about 1.1:1 — so one note is as loud as the next.
 
 Four voices: the oscillator slot hands out note-on and note-off, so a new note
-takes a free voice instead of cutting off the note before it, and a released key
-leaves its object ringing. A fifth note steals the voice that has rung longest.
+takes a free voice instead of cutting off the note before it. A released key ends
+the note: the voice fades out in about 4 ms and the amp EG of the NTS-1 takes the
+tail from there, so the release knob is the release, and the knob cannot be lied
+to by a bank that rings for half a minute underneath it. A fifth note steals the
+voice whose fade is furthest along, then the one that has rung longest.
 Each voice keeps the pitch it was struck at — a struck object does not glide —
 except the newest one, which follows the keyboard and the tune knob so a solo line
 still bends; a note that jumps far enough to put a bank into a runaway drops that
@@ -219,8 +229,10 @@ a single voice keeps its level and the rest are tucked in under it.
 
 Everything else here answers a hit. `bowed` is the one that keeps going: a delay
 loop of one period is rubbed by a bow of filtered noise plus one small push per
-period, and the loop's losses decide how long the note takes to speak and how it
-dies. Four voices, because a chord of sustained notes is the point.
+period, and the loop's losses decide how long the note takes to speak. When the
+key comes up the bow leaves at once, whatever the Attack knob is set to, because
+the amp EG of the NTS-1 comes after this slot and owns the tail. Four voices,
+because a chord of sustained notes is the point.
 
 | Control | Function |
 | --- | --- |

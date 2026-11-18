@@ -3,6 +3,29 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## resonator — 1.6-0
+
+- A released key ends the note. The bank used to ring on after note-off — at the
+  top of the A knob a bowl or a gong holds more than half a minute of energy —
+  which put the unit under the amp EG of the NTS-1 instead of in it: 300 ms after
+  the key came up, a note still measured only 2.2 dB below its held level. The
+  voice now fades in about 4 ms and the EG's release knob is the tail; the same
+  measurement is 159 dB down. The voice allocator takes the voice whose fade is
+  furthest along first, so a fast line cannot cut one that is still fading, and
+  a voice's bank is cleared when its fade is over rather than when it happens to
+  ring down.
+- The harness prints `release_db` for the oscillator units: the level 300 ms
+  after note-off relative to the level while the key was down. `tests/run.sh`
+  fails if it grows by more than 10 dB.
+
+## bowed — 1.3-0
+
+- When the key comes up the bow leaves at once instead of following the attack
+  coefficient, so the release no longer depends on the Attack knob: at 100 %
+  attack the old release took its time constant from the bow's catch time. The
+  amp EG of the NTS-1 comes after the oscillator slot, so the tail is its job at
+  every setting (measured 168 dB down 300 ms after note-off).
+
 ## bowed — 1.2-0
 
 - The Bow parameter works. It and the A knob are the same control on two pages,
