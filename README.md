@@ -376,7 +376,7 @@ section's state, so the count can be turned while it runs without a click.
 ### irbody — reverb effect (instrument bodies)
 
 The wet signal is stereo now. Two points on a corpus do not hear the same
-thing: the tail is read from the three delay lines a few samples apart and goes
+thing: the tail is read from the two delay lines a few samples apart and goes
 through an allpass on the difference, and the modes themselves take a quarter
 of a millisecond detour on the right. How wide that is depends on the
 body — a wood block is wider than a drum — and the two average back to the level
@@ -415,13 +415,14 @@ No body is larger than a guitar. The model describes a piano soundboard and a
 steel plate as bigger things, and a knob that walks all of them had no business
 putting a note in a room: the comb scale and both decay constants are brought
 back to the guitar's, so every preset is a body you could hold, and a piano or a
-plate is that body's colour rather than a hall. Three delay lines instead of
-four, and no long allpass on the side signal, which is what a small object needs
-and what the slot can afford.
+plate is that body's colour rather than a hall. Two delay lines instead of four,
+no allpass on the side signal and none on the tail, which is what a small object
+needs and what the slot can afford: the two lines are read four times between
+them where the old network read nine.
 
-Only the comb line that the tail stands in lives in SDRAM, 11 KB of it. The two
+Only the comb line that the tail stands in lives in SDRAM, 5 KB of it. The two
 engines and the short delay lines are read and written once per sample, so they
-sit in SRAM instead: 4.3 KB of it, with the code, out of the 12 KB the slot has.
+sit in SRAM instead: 2.3 KB of it, with the code, out of the 12 KB the slot has.
 That is a placement, not a different sound — on the host the cost is the same
 before and after, and it is on the instrument that a sample would otherwise wait
 on SDRAM for its own state.
@@ -443,9 +444,9 @@ The first version of this unit convolved the sound with those responses: 4096
 taps in sixteen frequency domain partitions, a 512 point FFT every 256 samples,
 603 KB of SDRAM for the spectra and 5.3 ms of latency. It worked and it was, by
 a wide margin, the most expensive thing here. The network is the same model
-without the finite response in it: eleven resonators at most, three delay lines
-in a feedback delay network, four allpasses, one damping low pass — 11 KB of
-SDRAM and no FFT, measured at 40 ns/frame against 47 for the convolution.
+without the finite response in it: eleven resonators at most, two delay lines in
+a feedback delay network, three allpasses, one damping low pass — 5 KB of SDRAM
+and no FFT, measured at 36 ns/frame against 47 for the convolution.
 
 The one audible difference is the sustain. An 85 ms response stops 85 ms after
 the sound that fed it; a network keeps ringing while it is fed, so a held note
@@ -562,11 +563,11 @@ effect slots are handed between notes.
 | `reso` | 2.1 KB | 0.4 KB | 28.6 → 22.3 ns (**-22%**) | 29.5 → 2.6 ns (**-91%**) |
 | `elements` | 2.6 KB | 0.4 KB | 39.2 → 16.3 ns (**-58%**) | 39.9 → 1.6 ns (**-96%**) |
 | `barber` | 1.9 KB | 0.3 KB | 33.7 → 33.9 ns | 34.0 → 2.4 ns (**-93%**) |
-| `irbody` | 5.2 KB | 4.3 KB + 11 KB SDRAM | 42.4 → 40.2 ns (**-5%**) | 46.5 → 1.8 ns (**-96%**) |
+| `irbody` | 5.2 KB | 2.3 KB + 5 KB SDRAM | 42.2 → 36.3 ns (**-14%**) | 46.5 → 2.1 ns (**-95%**) |
 
 Summed over one slot of each type — `bowed`, `elements`, `barber` and `irbody`,
-which is a full house on the mkI — that is 129 → 101 ns/frame while playing, and
-128 → 7.4 ns/frame with the instrument idle. Which slot types run at once is the
+which is a full house on the mkI — that is 129 → 97 ns/frame while playing, and
+128 → 7.7 ns/frame with the instrument idle. Which slot types run at once is the
 difference the instrument hears: four slots together used to do the same work
 whether or not a note was sounding, and between notes now almost none.
 

@@ -3,6 +3,35 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## irbody — two lines
+
+The pass before this one capped every body at a guitar and took the network from
+four delay lines to three, which was 5%: still the most expensive unit here. The
+lines that were left to cut are the third comb and the five millisecond allpass
+on the tail, and the tail is a few per cent of the wet signal — what a body is
+comes from its modes, and those are untouched.
+
+- Two comb lines, and the allpass on the tail is gone: the tail now goes through
+the 2 ms one and the side through its own. Per sample the two lines are read
+four times between them, where the network used to read nine.
+- Host, five alternating passes against the previous build in one session,
+  minimum: 39.7 → 36.3 ns/frame at the knob's default body (-9%), 41.4 → 37.6 at
+  the piano (-9%). The idle path is untouched at 2.1 ns.
+- Counted off the image with `tools/cycles.py`, with every loop body at its own
+  iteration count: the per-sample engine went 701 → 573 cycles on the M4 for an
+  eleven-mode body (-18%), and 601 → 473 for the drum at seven.
+- What it does to the sound: rendered through the piano body, a plucked tone
+  differs from the previous build by -32 dB, and all of that is in the first
+  150 ms — the tail. Third-octave levels stay within 1.5 dB, the stereo
+  correlation is 0.98 as before, and the -40 dB point is the same 150 ms. The
+  body's modes, which carry the identity of the object, do not move at all.
+- SDRAM 11 → 5 KB and SRAM 4.3 → 2.3 KB, because the lines that are gone took
+  their buffers with them.
+
+The goldens moved, in the tail only.
+
+Versions: `irbody` 1.8-0.
+
 ## irbody — three lines and a guitar
 
 This was the most expensive unit here, and part of the reason was what the knob
