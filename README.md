@@ -341,6 +341,13 @@ It is an independent implementation inspired by the resonators of Mutable
 Instruments Elements, not a port: a modulation effect on the NTS-1 gets two
 knobs and no note information, so the pitch is set by hand here.
 
+The instrument is mono, so this unit renders one bank. The slot is handed a main
+and a sub buffer, but an instrument with one oscillator has one signal, and the
+SDK says a platform without a sub timbre may ignore the sub buffers; a host that
+still arrives with a separate sub output gets the same samples there. The bank
+runs two samples per step, so each mode's coefficients and its two states are
+used for a pair instead of being read and written once per sample.
+
 | Control | Function |
 | --- | --- |
 | A (TIME) | fundamental, 40 Hz .. 2 kHz |
@@ -538,21 +545,27 @@ effect slots are handed between notes.
 | `bowed` | 2.7 KB | 4.1 KB | 14.1 → 10.2 ns (**-27%**) | 7.3 → 1.6 ns (**-78%**) |
 | `lpg` | 1.7 KB | 0.1 KB | 21.0 → 21.0 ns | 21.1 → 2.1 ns (**-90%**) |
 | `reso` | 2.1 KB | 0.4 KB | 28.6 → 22.3 ns (**-22%**) | 29.5 → 2.6 ns (**-91%**) |
-| `elements` | 2.7 KB | 0.7 KB | 39.2 → 30.2 ns (**-23%**) | 39.9 → 2.5 ns (**-94%**) |
+| `elements` | 2.6 KB | 0.3 KB | 39.2 → 16.3 ns (**-58%**) | 39.9 → 1.6 ns (**-96%**) |
 | `barber` | 1.9 KB | 0.3 KB | 33.7 → 33.9 ns | 34.0 → 2.4 ns (**-93%**) |
 | `irbody` | 5.2 KB | 52 KB SDRAM | 42.2 → 42.2 ns | 46.5 → 2.1 ns (**-95%**) |
 
 Summed over one slot of each type — `bowed`, `elements`, `barber` and `irbody`,
-which is a full house on the mkI — that is 129 → 117 ns/frame while playing, and
-128 → 8.6 ns/frame with the instrument idle. Which slot types run at once is the
+which is a full house on the mkI — that is 129 → 103 ns/frame while playing, and
+128 → 7.7 ns/frame with the instrument idle. Which slot types run at once is the
 difference the instrument hears: four slots together used to do the same work
 whether or not a note was sounding, and between notes now almost none.
 
 What was done, and why the sound does not move:
 
-* `elements` and `reso` compute both timbres in one pass over the modes. The
-  coefficients are shared by the two channels and were loaded twice; they are
-  loaded once now, with the same three terms per channel in the same order.
+* `reso` computes both timbres in one pass over the modes. The coefficients are
+  shared by the two channels and were loaded twice; they are loaded once now,
+  with the same three terms per channel in the same order.
+* `elements` renders one bank instead of two, because the instrument has one
+  oscillator, and steps it two samples at a time: a mode's coefficients and its
+  two states are used for the pair, so the state is read and written once where
+  it was read and written twice. Its ratio table is gone too — the four
+  geometries are worked out when the knob moves rather than kept as four times
+  sixteen floats.
 * `resonator` skips the per-mode drive coefficient once the strike is over — a
   few milliseconds into the note — because that term is exactly zero after it, so
   the two paths agree sample for sample.

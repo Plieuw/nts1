@@ -3,6 +3,29 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## elements — one bank
+
+The instrument is mono, so `elements` was rendering two banks of sixteen modes
+where it could only ever be heard through one. The slot is handed a main and a
+sub buffer; the NTS-1 has one oscillator, and the SDK says a platform without a
+sub timbre may ignore the sub buffers. A host that still arrives with a separate
+sub output now gets the same samples there.
+
+- One bank, and it steps two samples at a time: a mode's coefficients and its two
+  states are used for the pair instead of being read and written once per sample.
+  Every value is the same float, so a single note measures and sounds exactly as
+  before — the goldens did not move.
+- The four ratio sets (four times sixteen floats) are gone; the geometry is
+  worked out from the tables when the knob moves.
+- Host cost, five alternating passes against the previous build in one session,
+  minimum: 30.2 → 16.3 ns per frame playing, 2.5 → 1.6 idle.
+- Size: 3604 → 3032 bytes of the slot's 6 KB, of which the SRAM is 752 → 356
+  bytes.
+
+Versions: `elements` 1.4-0. Its manifest still said 1.1-0 while the notes for the
+earlier passes named 1.3-0: those passes bumped the `api` line instead of the
+version. `lpg`, `reso` and `barber` have the same thing in their manifests.
+
 ## all three oscillators — mono
 
 The NTS-1 is monophonic: one note at a time, whether it comes from the keys, the

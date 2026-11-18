@@ -17,6 +17,13 @@
  * Instruments Elements rather than a port of it: the NTS-1 gives a modulation
  * effect two knobs and no note information, so pitch is set by hand here.
  *
+ * The instrument is mono, so there is one bank of modes and one signal: the
+ * modfx slot hands over a main and a sub buffer, but an instrument with one
+ * oscillator has one signal, and the SDK lets a unit on a platform without a
+ * sub timbre ignore the sub buffers. A separate sub output gets the same
+ * samples. The bank is stepped two samples at a time, one mode's coefficients
+ * and states used for the pair.
+ *
  * A-knob (TIME)   fundamental, 40 Hz .. 2 kHz
  * B-knob (DEPTH)  geometry: string -> membrane -> plate -> bell
  */
@@ -90,27 +97,33 @@ struct Channel {
 struct State {
   float pitch;     // 0..1
   float geometry;  // 0..1
-  float ratio[4][kModes];
   float b0[kModes];
   float a1[kModes];
   float a2[kModes];
   float exc_coef;  // exciter low pass
   float out_gain;
-  Channel ch[2];
+  Channel ch;
   int active_modes;  // modes below Nyquist, the rest is silent
 };
 
 State s;
 
-void buildRatioTable() {
-  for (int k = 0; k < kModes; ++k) {
-    const float n = (float)(k + 1);
+// The ratio of mode k in one geometry. The string's comes out of the stiffness
+// formula when the geometry moves; keeping all four sets — four times sixteen
+// floats — for a knob movement was 256 bytes of the slot.
+inline float ratioFor(int set, int k) {
+  const float n = (float)(k + 1);
+  switch (set) {
+  case 0:
     // A real string is stiff: f_n = n * f0 * sqrt(1 + B n^2), which stretches
     // the partials apart as they go up.
-    s.ratio[0][k] = n * sqrtf_fast(1.f + 0.0008f * n * n);
-    s.ratio[1][k] = kMembrane[k];
-    s.ratio[2][k] = kPlate[k];
-    s.ratio[3][k] = kBell[k];
+    return n * sqrtf_fast(1.f + 0.0008f * n * n);
+  case 1:
+    return kMembrane[k];
+  case 2:
+    return kPlate[k];
+  default:
+    return kBell[k];
   }
 }
 
@@ -153,9 +166,9 @@ void updateCoefficients() {
   int active = 0;
 
   for (int k = 0; k < kModes; ++k) {
-    const float ratio =
-        s.ratio[i0][k] + (s.ratio[i0 + 1][k] - s.ratio[i0][k]) * t;
-    const float f = f0 * ratio;
+    const float ra = ratioFor(i0, k);
+    const float rb = ratioFor(i0 + 1, k);
+    const float f = f0 * (ra + (rb - ra) * t);
 
     if (f >= 0.45f * kFs) {
       s.b0[k] = 0.f;
@@ -216,7 +229,23 @@ bool idleChannel(const float *xn, uint32_t frames, Channel &c) {
   return true;
 }
 
-void processChannel(const float *xn, float *yn, uint32_t frames, Channel &c) {
+// What a sample is worth right after the bank was cleared: every mode's state
+// is zero, so its output is b[n] times the exciter alone. Only the runaway
+// guard needs it, and it keeps the dropped sample exactly what the old
+// sample-by-sample guard produced.
+float clearedSample(const float *b0, int modes, float exc, float out_gain) {
+  float acc = 0.f;
+  for (int n = 0; n < modes; ++n)
+    acc += b0[n] * exc;
+  return fx_softclipf(0.15f, acc * out_gain);
+}
+
+// Two samples per step. The bank's state is read and written once per pair
+// instead of once per sample, and the two samples are two independent chains
+// for the core to interleave. The second sample of a pair takes the first one's
+// result as its previous state, in the same order as before, so every value is
+// the same float it was.
+void processMono(const float *xn, float *yn, uint32_t frames, Channel &c) {
   const int modes = s.active_modes;
   const float *const b0 = s.b0;
   const float *const a1 = s.a1;
@@ -226,66 +255,19 @@ void processChannel(const float *xn, float *yn, uint32_t frames, Channel &c) {
 
   settle(c);
 
-  for (uint32_t i = 0; i < frames; ++i) {
-    const float raw = xn[i];
-
+  uint32_t i = 0;
+  for (; i + 1 < frames; i += 2) {
     // Remove rumble, then shape the exciter.
-    c.hp_y = 0.995f * (c.hp_y + raw - c.hp_x);
-    c.hp_x = raw;
+    c.hp_y = 0.995f * (c.hp_y + xn[i] - c.hp_x);
+    c.hp_x = xn[i];
     c.lp += (c.hp_y - c.lp) * exc_coef;
+    const float e0 = c.lp;
 
-    const float exc = c.lp;
-    float acc = 0.f;
+    c.hp_y = 0.995f * (c.hp_y + xn[i + 1] - c.hp_x);
+    c.hp_x = xn[i + 1];
+    c.lp += (c.hp_y - c.lp) * exc_coef;
+    const float e1 = c.lp;
 
-    for (int n = 0; n < modes; ++n) {
-      const float y = b0[n] * exc + a1[n] * c.y1[n] + a2[n] * c.y2[n];
-      c.y2[n] = c.y1[n];
-      c.y1[n] = y;
-      acc += y;
-    }
-
-    // Moving the geometry or the pitch jumps the modes under the ringing
-    // state, and a high bank can then grow by a factor of a few per sample.
-    // Legitimate audio never gets near this limit, so a runaway bank is simply
-    // dropped rather than allowed to put a NaN into the slot.
-    if (!(acc > -kBankLimit && acc < kBankLimit)) {
-      clearChannel(c);
-      acc = 0.f;
-    }
-
-    yn[i] = fx_softclipf(0.15f, acc * out_gain);
-  }
-}
-
-// Both timbres in one pass. The modal coefficients are shared by the two
-// channels, so they are loaded once per mode instead of once per channel — the
-// cheapest saving in the unit, and the per-channel arithmetic is the same three
-// terms in the same order, so the output does not move.
-void processBoth(const float *x0, float *y0, const float *x1, float *y1,
-                 uint32_t frames) {
-  Channel &c0 = s.ch[0];
-  Channel &c1 = s.ch[1];
-  const int modes = s.active_modes;
-  const float *const b0 = s.b0;
-  const float *const a1 = s.a1;
-  const float *const a2 = s.a2;
-  const float exc_coef = s.exc_coef;
-  const float out_gain = s.out_gain;
-
-  for (uint32_t i = 0; i < frames; ++i) {
-    const float r0 = x0[i];
-    const float r1 = x1[i];
-
-    c0.hp_y = 0.995f * (c0.hp_y + r0 - c0.hp_x);
-    c0.hp_x = r0;
-    c0.lp += (c0.hp_y - c0.lp) * exc_coef;
-
-    c1.hp_y = 0.995f * (c1.hp_y + r1 - c1.hp_x);
-    c1.hp_x = r1;
-    c1.lp += (c1.hp_y - c1.lp) * exc_coef;
-
-    const float e0 = c0.lp;
-    const float e1 = c1.lp;
     float acc0 = 0.f;
     float acc1 = 0.f;
 
@@ -293,27 +275,61 @@ void processBoth(const float *x0, float *y0, const float *x1, float *y1,
       const float b = b0[n];
       const float p = a1[n];
       const float q = a2[n];
-      const float v0 = b * e0 + p * c0.y1[n] + q * c0.y2[n];
-      const float v1 = b * e1 + p * c1.y1[n] + q * c1.y2[n];
-      c0.y2[n] = c0.y1[n];
-      c0.y1[n] = v0;
+      const float y1 = c.y1[n];
+      const float y2 = c.y2[n];
+      const float v0 = b * e0 + p * y1 + q * y2;
+      const float v1 = b * e1 + p * v0 + q * y1;
+      c.y2[n] = v0;
+      c.y1[n] = v1;
       acc0 += v0;
-      c1.y2[n] = c1.y1[n];
-      c1.y1[n] = v1;
       acc1 += v1;
     }
 
+    // Moving the geometry or the pitch jumps the modes under the ringing
+    // state, and a high bank can then grow by a factor of a few per sample.
+    // Legitimate audio never gets near this limit, so a runaway bank is simply
+    // dropped rather than allowed to put a NaN into the slot.
     if (!(acc0 > -kBankLimit && acc0 < kBankLimit)) {
-      clearChannel(c0);
-      acc0 = 0.f;
+      // The second sample of the pair was stepped under the runaway: after the
+      // clear it starts from an empty bank, which is one value per mode.
+      clearChannel(c);
+      for (int n = 0; n < modes; ++n) {
+        const float v = b0[n] * e1;
+        c.y1[n] = v;
+        c.y2[n] = 0.f;
+      }
+      yn[i] = 0.f;
+      yn[i + 1] = clearedSample(b0, modes, e1, out_gain);
+      continue;
     }
     if (!(acc1 > -kBankLimit && acc1 < kBankLimit)) {
-      clearChannel(c1);
+      clearChannel(c);
       acc1 = 0.f;
     }
 
-    y0[i] = fx_softclipf(0.15f, acc0 * out_gain);
-    y1[i] = fx_softclipf(0.15f, acc1 * out_gain);
+    yn[i] = fx_softclipf(0.15f, acc0 * out_gain);
+    yn[i + 1] = fx_softclipf(0.15f, acc1 * out_gain);
+  }
+
+  if (i < frames) {
+    const float raw = xn[i];
+    c.hp_y = 0.995f * (c.hp_y + raw - c.hp_x);
+    c.hp_x = raw;
+    c.lp += (c.hp_y - c.lp) * exc_coef;
+
+    const float exc = c.lp;
+    float acc = 0.f;
+    for (int n = 0; n < modes; ++n) {
+      const float y = b0[n] * exc + a1[n] * c.y1[n] + a2[n] * c.y2[n];
+      c.y2[n] = c.y1[n];
+      c.y1[n] = y;
+      acc += y;
+    }
+    if (!(acc > -kBankLimit && acc < kBankLimit)) {
+      clearChannel(c);
+      acc = 0.f;
+    }
+    yn[i] = fx_softclipf(0.15f, acc * out_gain);
   }
 }
 
@@ -331,41 +347,32 @@ void MODFX_INIT(uint32_t platform, uint32_t api) {
   s.pitch = 0.45f;
   s.geometry = 0.35f;
 
-  buildRatioTable();
   updateCoefficients();
-  clearChannel(s.ch[0]);
-  clearChannel(s.ch[1]);
+  clearChannel(s.ch);
 }
 
 void MODFX_PROCESS(const float *main_xn, float *main_yn, const float *sub_xn,
                    float *sub_yn, uint32_t frames) {
-  const bool has_sub = sub_yn != main_yn && sub_xn != nullptr;
+  // The NTS-1 has one oscillator, so there is no second timbre: the sub buffers
+  // carry the same signal, and on a platform without a sub timbre the SDK says
+  // they can be ignored. One bank renders the one signal, and a host that still
+  // hands over a separate sub output gets those same samples.
+  (void)sub_xn;
+  const bool second_out = sub_yn != main_yn;
 
   // A channel handed digital silence with an empty bank has nothing to compute:
   // every term of its sum is zero, so its output is written and the DSP is
-  // skipped. The instrument's second timbre is silent most of the time, which
-  // makes this one bank's worth of work instead of two.
-  const bool main_idle = idleChannel(main_xn, frames, s.ch[0]);
-  const bool sub_idle = has_sub ? idleChannel(sub_xn, frames, s.ch[1]) : true;
-
-  if (main_idle)
+  // skipped, which is most of what the slot is handed between notes.
+  if (idleChannel(main_xn, frames, s.ch)) {
     for (uint32_t i = 0; i < frames; ++i)
       main_yn[i] = 0.f;
-  if (has_sub && sub_idle)
-    for (uint32_t i = 0; i < frames; ++i)
-      sub_yn[i] = 0.f;
-
-  if (main_idle && sub_idle)
-    return;
-
-  if (!main_idle && has_sub && !sub_idle) {
-    processBoth(main_xn, main_yn, sub_xn, sub_yn, frames);
-    return;
+  } else {
+    processMono(main_xn, main_yn, frames, s.ch);
   }
-  if (!main_idle)
-    processChannel(main_xn, main_yn, frames, s.ch[0]);
-  if (has_sub && !sub_idle)
-    processChannel(sub_xn, sub_yn, frames, s.ch[1]);
+
+  if (second_out)
+    for (uint32_t i = 0; i < frames; ++i)
+      sub_yn[i] = main_yn[i];
 }
 
 void MODFX_PARAM(uint8_t index, int32_t value) {
@@ -394,8 +401,7 @@ void MODFX_PARAM(uint8_t index, int32_t value) {
 }
 
 void MODFX_SUSPEND(void) {
-  clearChannel(s.ch[0]);
-  clearChannel(s.ch[1]);
+  clearChannel(s.ch);
 }
 
 void MODFX_RESUME(void) {}
