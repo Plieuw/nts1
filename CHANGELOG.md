@@ -3,6 +3,24 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## manifests — the versions the notes named
+
+Four manifests were behind the notes, for one reason: their commits bumped the
+`api` line instead of the `version` line. `api` is the SDK a unit is built
+against, not the unit's own version, so nothing on the instrument changed — but
+the unit announced a version it had never been given, and the notes for those
+releases had been written from the `api` number, which is why the two looked
+consistent.
+
+- `barber` 1.1-0 → 1.3-0. Its `api` line had walked 1.1-0 → 1.2-0 → 1.3-0, one
+  bump per release.
+- `lpg` and `reso` 1.1-0 → 1.2-0, with `api` 1.1-0 → 1.2-0 in the cost pass.
+- `elements` 1.1-0 → 1.4-0, with `api` 1.1-0 → 1.3-0 over two passes.
+
+`api` is 1.1-0 in all of them again, which is the SDK they are built against.
+Nothing in the code moved: the binaries are the same, only their metadata says
+what it should.
+
 ## elements — one bank
 
 The instrument is mono, so `elements` was rendering two banks of sixteen modes
@@ -22,9 +40,8 @@ sub output now gets the same samples there.
 - Size: 3604 → 3032 bytes of the slot's 6 KB, of which the SRAM is 752 → 356
   bytes. The CI's gcc 5.4 build, which is what ships: 3360 → 2848 bytes.
 
-Versions: `elements` 1.4-0. Its manifest still said 1.1-0 while the notes for the
-earlier passes named 1.3-0: those passes bumped the `api` line instead of the
-version. `lpg`, `reso` and `barber` have the same thing in their manifests.
+Versions: `elements` 1.4-0, and see the entry above for why its manifest had said
+1.1-0.
 
 ## all three oscillators — mono
 
