@@ -51,6 +51,20 @@ static void unitRender(int n) {
     _hook_cycle(&gParam, b, kBlock);
   }
 }
+
+// A note that is played, not one that was played once: without this an
+// oscillator that decays is timed while it outputs zeros, which is not what it
+// costs to play. A key is struck every half second, with the previous one
+// released first, so this is an ordinary note and not a slur.
+static void unitPlay(int n) {
+  for (int done = 0; done < n;) {
+    const int chunk = (n - done < 24000) ? (n - done) : 24000;
+    unitNoteOff();
+    unitNote(60);
+    unitRender(chunk);
+    done += chunk;
+  }
+}
 #else
 static int gPos;
 static float gSrc[4096];  // the input, worked out once so it is not part of the cost
@@ -115,6 +129,9 @@ int main(int argc, char **argv) {
     unitNote(60);
     unitRender(48000);
     unitNoteOff();
+#if UNITKIND == 0
+    unitPlay(48000);
+#endif
   }
 
   const int frames = 48000 * 20;
@@ -133,10 +150,10 @@ int main(int argc, char **argv) {
     unitRender(48000 * 3);
 #endif
   } else {
-  unitInit();
-  for (int i = 0; i < gKnobs; ++i) unitParam(i, (gLo[i] + gHi[i]) / 2);
-  unitNote(60);
-  unitRender(4096);
+    unitInit();
+    for (int i = 0; i < gKnobs; ++i) unitParam(i, (gLo[i] + gHi[i]) / 2);
+    unitNote(60);
+    unitRender(4096);
   }
   // Three passes, keep the best: this host is shared with everything else on
   // the machine, so a single pass is a number and the minimum is a cost.
@@ -158,7 +175,14 @@ int main(int argc, char **argv) {
 #endif
     }
     const double t0 = now();
+#if UNITKIND == 0
+    if (gSilent)
+      unitRender(frames);
+    else
+      unitPlay(frames);
+#else
     unitRender(frames);
+#endif
     const double t1 = now();
     const double d = (t1 - t0) * 1e9 / (double)frames;
     if (d < best) best = d;

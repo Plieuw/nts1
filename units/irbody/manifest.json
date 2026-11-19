@@ -3,9 +3,9 @@
     "platform": "nutekt-digital",
     "module": "revfx",
     "api": "1.1-0",
-    "dev_id": 1349081445,
-    "prg_id": 5,
-            "version": "1.13-0",
+    "dev_id": 0,
+    "prg_id": 8,
+            "version": "1.13-1",
     "name": "irbody",
     "num_param": 0,
     "params": []

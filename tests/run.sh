@@ -57,5 +57,20 @@ print(','.join(out))")
   fi
 done
 
+# The legato glide: a key that arrives while the previous one is still down has
+# to move the pitch instead of restarting the note.
+for u in noise resonator bowed; do
+  "$CXX" -O2 -std=c++11 -o "$OUT/legato_$u" tests/legato.cpp \
+    -Itests/host -I"units/$u/src" \
+    -DUNITKIND=0 -DUNITFILE="\"$PWD/units/$u/src/$u.cpp\"" || { status=1; continue; }
+  if "$OUT/legato_$u" --unit "$u" > "$OUT/legato_$u.txt" &&
+     python3 tests/legato_check.py "$u" "$OUT/legato_$u.txt"; then
+    echo "legato $u: ok"
+  else
+    echo "legato $u: FAILED"
+    status=1
+  fi
+done
+
 python3 tests/lint_manifests.py || status=1
 exit $status

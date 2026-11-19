@@ -30,8 +30,12 @@ for path in sorted(glob.glob("units/*/manifest.json")):
     for p in params:
         if len(p) != 4 or p[1] > p[2]:
             problems.append("%s: bad parameter descriptor %r" % (name, p))
-    if h.get("dev_id", 0) == 0:
-        problems.append("%s: dev_id 0, which the SDK reserves for invalid" % name)
+    # The SDK's manifest reference says of dev_id: "Developer ID, currently
+    # unused, set to 0", and its own dummy units and `waves` ship 0. Anything
+    # else is a claim the mkI ignores.
+    if h.get("dev_id", 0) != 0:
+        problems.append("%s: dev_id %r, the SDK asks for 0"
+                        % (name, h.get("dev_id")))
     if not re.match(r"^\d+\.\d+-\d+$", str(h.get("version", ""))):
         problems.append("%s: version %r is not x.y-z" % (name, h.get("version")))
 

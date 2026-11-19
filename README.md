@@ -584,10 +584,12 @@ stock type.
 
 ### What the numbers mean in a frame
 
-One block is 64 frames at 48 kHz: 1.333 ms. The most expensive unit here,
-`barber`, asks for 48 ns of host time per frame, which is 3.1 µs of a 1333 µs
-block, or 0.23%. Then `irbody` 28 ns/frame, `reso` 22, `lpg` 21, `resonator` 18,
-`elements` 16, `bowed` 10 and `noise` 9. The Cortex-M4F in the
+One block is 64 frames at 48 kHz: 1.333 ms, and the bench strikes a note every
+half second so an oscillator is timed while it is sounding and not after it has
+decayed. The most expensive unit here, `barber`, asks for 48 ns of host time per
+frame, which is 3.1 µs of a 1333 µs block, or 0.23%. Then `irbody` 28 ns/frame,
+`reso` 22, `lpg` 21, `resonator` 20, `elements` 16, `bowed` 12 and `noise` 9. The
+Cortex-M4F in the
 NTS-1 runs at 168 MHz and has a single precision
 FPU, so the same code there costs several times what it costs on a desktop core;
 even at eight times the host, the heaviest unit is around 2% of a block.
@@ -796,6 +798,10 @@ to run on the hardware.
 Prefer the SDK's own layout? Copy a `units/<name>` directory into
 `logue-sdk/platform/nutekt-digital/` and run `make install` there; the defaults
 in the Makefile then line up.
+
+A named set is a file in `packs/`, one unit per line, and builds with
+`./scripts/build.sh --pack rig`: the same five files every time instead of a
+hand-picked list, which is what a release for one rig needs.
 
 `.github/workflows/build.yml` builds all units on every push and uploads them as
 an artifact. Cutting a release is pushing a tag: the same workflow builds the

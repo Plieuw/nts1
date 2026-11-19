@@ -4,6 +4,7 @@
 #
 #   ./scripts/build.sh                 build every unit into dist/
 #   ./scripts/build.sh noise lpg       build only the named units
+#   ./scripts/build.sh --pack rig      build the units listed in packs/rig.txt
 #   ./scripts/build.sh --setup         only fetch the SDK and the toolchain
 #
 # The logue SDK and the toolchain are downloaded into .sdk/ on first use, which
@@ -79,7 +80,19 @@ fi
 
 fetch_sdk
 
-if [ "$#" -eq 0 ]; then
+PACK=""
+if [ "${1:-}" = "--pack" ]; then
+  PACK="${2:-}"
+  PACK_FILE="$ROOT/packs/$PACK.txt"
+  if [ -z "$PACK" ] || [ ! -f "$PACK_FILE" ]; then
+    echo "!! unknown pack: ${PACK:-<none>} (see packs/)" >&2
+    exit 1
+  fi
+  # A pack is one line per unit, comments allowed: the set for one rig, so a
+  # release of it is the same command every time.
+  targets=($(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$PACK_FILE"))
+  echo ">> pack $PACK: ${targets[*]}"
+elif [ "$#" -eq 0 ]; then
   targets=("${ALL_UNITS[@]}")
 else
   targets=("$@")

@@ -536,8 +536,13 @@ __attribute__((always_inline)) inline void tailSample(float x, const TailParams 
 
 void updateDamping() {
   const float fc = 1200.f * arc_pow2f(2.71f * 1.44269504f * s.damp);  // 1.2..18 kHz
-  s.damp_coef =
-      1.f - arc_expneg(2.f * kPi * clipminmaxf(200.f, fc, 0.45f * kFs) / kFs);
+  // 1 - exp(-a), and not 1 - arc_expneg(a): that is a series for small
+  // arguments. At 18 kHz its argument is 2.36, where it comes out negative and
+  // the coefficient lands above one — a one pole that grows instead of damping,
+  // measured at +7.9 dB around 18 kHz with B at the top. 2^-a is exact over the
+  // whole range and costs the same as the series.
+  s.damp_coef = 1.f -
+      arc_pow2f(-2.f * kPi * clipminmaxf(200.f, fc, 0.45f * kFs) / kFs * 1.44269504f);
 }
 
 // Starts a crossfade into preset p: the free slot is rebuilt, the other one keeps

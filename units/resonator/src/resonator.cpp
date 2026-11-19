@@ -272,6 +272,10 @@ struct Voice {
 // time for any interval: a key arriving while the previous one is still down is
 // a new fingering on a body that is already ringing, not a new strike.
 constexpr int kLegatoSamples = 1536;
+// A bend retunes the bank along the same straight line, but quickly: 5 ms is
+// long enough that the coefficients are not replaced in one step and short
+// enough that a pitch wheel feels direct.
+constexpr int kTrackSamples = 256;
 
 struct State {
   // User parameters.
@@ -296,6 +300,7 @@ struct State {
   float glide_from_f0, glide_to_f0;
   float glide_from_note, glide_to_note;
   int   glide_left;
+  int   glide_total;  // the length this ramp was started with
 };
 
 State s;
@@ -464,8 +469,16 @@ void updatePitch(const user_osc_param_t *const params) {
   if (!v.held || v.note_id != note_id)
     return;
   const float f0 = f0ForNote(note_id, fine, s.tune);
-  if (fabsf(f0 - v.f0) > v.f0 * 0.003f)   // five cents is below the ear
-    voiceCoefficients(v, f0, (float)note_id + fine);
+  if (fabsf(f0 - v.f0) > v.f0 * 0.003f) {   // five cents is below the ear
+    // Not a jump: the bank is retuned along a short ramp, the same way a slur
+    // is, so the modes move instead of being replaced.
+    s.glide_from_f0 = v.f0;
+    s.glide_to_f0 = f0;
+    s.glide_from_note = v.note;
+    s.glide_to_note = (float)note_id + fine;
+    s.glide_left = kTrackSamples;
+    s.glide_total = kTrackSamples;
+  }
 }
 
 void render(q31_t *__restrict y, const uint32_t frames) {
@@ -599,7 +612,7 @@ void OSC_CYCLE(const user_osc_param_t *const params, int32_t *yn,
   if (s.glide_left > 0) {
     const int n = ((int)frames < s.glide_left) ? (int)frames : s.glide_left;
     s.glide_left -= n;
-    const float t = 1.f - (float)s.glide_left * (1.f / (float)kLegatoSamples);
+    const float t = 1.f - (float)s.glide_left * (1.f / (float)s.glide_total);
     voiceCoefficients(s.voice,
                       s.glide_from_f0 + (s.glide_to_f0 - s.glide_from_f0) * t,
                       s.glide_from_note +
@@ -637,6 +650,7 @@ void OSC_NOTEON(const user_osc_param_t *const params) {
     s.glide_from_note = v.note;
     s.glide_to_note = (float)note_id + fine;
     s.glide_left = kLegatoSamples;
+    s.glide_total = kLegatoSamples;
     v.exc_env = 0.f;
     return;
   }

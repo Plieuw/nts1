@@ -3,6 +3,41 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## a bug in the damper, a trap in the retune, and the tests that were missing
+
+A pass over the open list: one confirmed bug, one rough edge, and the checks that
+would have caught them.
+
+- `irbody` 1.13-1 — the damper's coefficient was `1 - arc_expneg(a)`, and
+  `arc_expneg` is a series for small arguments. At 18 kHz `a` is 2.36 and the
+  series comes out negative, so the coefficient landed above one: from B ≈ 0.86
+  up, the "damping" low pass was a filter that grows, +7.9 dB around 18 kHz at
+  the top of the knob. It is `1 - 2^-a` now, which is exact over the whole range
+  and costs the same. Measured with B at the top: the 8–12 kHz bands drop by 7 to
+  17 dB.
+- `resonator` 1.12-1 — a bend used to replace every mode coefficient in one step
+  when the pitch moved more than five cents. It now retunes along a 5 ms ramp,
+  the same straight line a slur uses, so the modes move instead of being
+  replaced.
+- The legato glide is in the tests now: `tests/legato.cpp` plays C4 and then G4
+  without releasing, and `tests/legato_check.py` asserts the three things that
+  make it a slur — the new note is reached, the pitch is still moving at 10 ms,
+  and the level does not restart. A regression cannot pass unnoticed any more.
+- `tools/bench.cpp` strikes a note every half second, so an oscillator is timed
+  while it is sounding. The old numbers timed a decayed note and flattered the
+  three oscillators by 1–2 ns/frame; the README quotes the new ones.
+- `packs/` and `./scripts/build.sh --pack rig`: the five files for this rig,
+  built with one command, so a release for that rig is reproducible instead of
+  a list retyped by hand.
+- Manifests: `dev_id` is 0 in all nine now. The SDK's manifest reference says
+  "Developer ID, currently unused, set to 0" and its own units ship 0; the
+  repository's linter had that rule backwards and now checks for 0 instead.
+  `prg_id` is unique per unit (it was 6 twice, and 2 twice) — the SDK calls it
+  free to set for reference.
+- Denormal and idle audit: every unit with a decaying tail zeroes it (lpg,
+  barber, irbody, reso, elements, resonator); `noise` and `bowed` have no tail to
+  guard. Nothing to change.
+
 ## the oscillators — a slur between legato notes
 
 The mkI has no portamento to hand to a unit: its MIDI chart has no CC 5 and there
