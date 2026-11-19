@@ -507,7 +507,7 @@ taps in sixteen frequency domain partitions, a 512 point FFT every 256 samples,
 a wide margin, the most expensive thing here. The network is the same model
 without the finite response in it: eleven resonators at most, two delay lines in
 a feedback delay network, three allpasses, one damping low pass — 5 KB of SDRAM
-and no FFT, measured at 36 ns/frame against 47 for the convolution.
+and no FFT, measured at 28 ns/frame against 47 for the convolution.
 
 The one audible difference is the sustain. An 85 ms response stops 85 ms after
 the sound that fed it; a network keeps ringing while it is fed, so a held note
@@ -560,15 +560,19 @@ stock type.
 ### What the numbers mean in a frame
 
 One block is 64 frames at 48 kHz: 1.333 ms. The most expensive unit here,
-`barber`, asks for 34 ns of host time per frame, which is 2.2 µs of a 1333 µs
-block, or 0.16%. `bowed` is 10 ns/frame, `resonator` 27. The Cortex-M4F in the
+`barber`, asks for 48 ns of host time per frame, which is 3.1 µs of a 1333 µs
+block, or 0.23%. Then `irbody` 28 ns/frame, `reso` 22, `lpg` 21, `resonator` 18,
+`elements` 16, `bowed` 10 and `noise` 9. The Cortex-M4F in the
 NTS-1 runs at 168 MHz and has a single precision
 FPU, so the same code there costs several times what it costs on a desktop core;
 even at eight times the host, the heaviest unit is around 2% of a block.
 
 Which is why nothing here is optimised for speed at the cost of the sound: the
 sixteen allpass stages of `barber` are what make its sweep a sweep, and cutting
-them would buy idle cycles nothing needs. The one place the budget is real is
+them would buy idle cycles nothing needs. The one pass that took speed for free
+is `irbody` 1.13-0: the box's taps only run while a box is playing, the two
+per-sample helpers are inlined, and the output is byte for byte what it was —
+40.2 to 27.8 ns a frame, with the goldens unmoved. The one place the budget is real is
 memory in the oscillator slot: `bowed` keeps one delay loop of 1024 samples and
 `resonator` one bank of modes, 4 KB and 0.4 KB of the 32 KB they get.
 

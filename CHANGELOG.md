@@ -3,6 +3,24 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## irbody — the same samples, less work
+
+A pass over the unit against the SDK's own habits: work that was multiplied by
+zero, and calls where the SDK would inline.
+
+- The box's six reflection taps ran on every sample of every body. They now run
+  only while a body that has taps is playing or being crossfaded to; seven of
+  the nine bodies have none. The input history is still written every sample, so
+  switching to the box mid note starts from real reflections, not from silence.
+- `bankSample` and `tailSample` are `always_inline`, which is how the SDK marks
+  its own hot helpers. They run once or twice per sample, so the call itself was
+  a measurable part of the unit; `tools/check_budget.py` still fits the 12 KB
+  reverb slot.
+- Measured on the host bench: 40.2 → 27.8 ns/frame, 31% less. The goldens did
+  not move a byte — the output is identical, so this is speed and nothing else.
+
+Versions: `irbody` 1.13-0.
+
 ## irbody — a soundbox played from delays
 
 Every body in this unit was a bank of resonances plus a diffuse tail. `box` is
