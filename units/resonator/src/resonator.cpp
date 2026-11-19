@@ -276,6 +276,9 @@ constexpr int kLegatoSamples = 1536;
 // long enough that the coefficients are not replaced in one step and short
 // enough that a pitch wheel feels direct.
 constexpr int kTrackSamples = 256;
+// A note can arrive just after the previous key came up, if the synth sends the
+// note off first: within this window it is still a slur.
+constexpr int kLegatoWindow = 1440;  // 30 ms at 48 kHz
 
 struct State {
   // User parameters.
@@ -301,6 +304,7 @@ struct State {
   float glide_from_note, glide_to_note;
   int   glide_left;
   int   glide_total;  // the length this ramp was started with
+  int   legato_window;  // samples left in which a new key is still a slur
 };
 
 State s;
@@ -594,6 +598,7 @@ void OSC_INIT(uint32_t platform, uint32_t api) {
     s.rng = 0x1234567u;
 
   s.glide_left = 0;
+  s.legato_window = 0;
   s.voice.note_id = 60;
   s.voice.held = false;
   s.voice.rel = 1.f;
@@ -605,6 +610,8 @@ void OSC_INIT(uint32_t platform, uint32_t api) {
 void OSC_CYCLE(const user_osc_param_t *const params, int32_t *yn,
                const uint32_t frames) {
   updatePitch(params);
+  if (s.legato_window > 0)
+    s.legato_window -= (int)frames;
 
   // The slur, a block at a time: the bank is retuned along a straight line and
   // its coefficients follow, so the modes move under a body that is still
@@ -643,7 +650,8 @@ void OSC_NOTEON(const user_osc_param_t *const params) {
   // is not repeated, which is what makes a slur one body moving instead of two
   // notes one after the other.
   Voice &v = s.voice;
-  if (v.held) {
+  if (v.held || s.legato_window > 0) {
+    s.legato_window = 0;
     v.note_id = note_id;
     s.glide_from_f0 = v.f0;
     s.glide_to_f0 = f0ForNote(note_id, fine, s.tune);
@@ -659,6 +667,7 @@ void OSC_NOTEON(const user_osc_param_t *const params) {
 }
 
 void OSC_NOTEOFF(const user_osc_param_t *const params) {
+  s.legato_window = kLegatoWindow;
   // The key comes up and the note ends: the voice starts its fade here and the
   // amp EG of the synth takes over from there. A new note can strike the bank
   // as soon as the fade is over, which is a few milliseconds.

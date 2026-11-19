@@ -3,6 +3,23 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## knobs that move instead of jumping
+
+- `reso` 1.2-1 and `elements` 1.7-1 — the two knobs are ramps now, 20 ms whatever
+the block size, instead of steps between one parameter message and the next. A
+  sustained sound with a hand on the knob zippered; now it retunes. `reso`'s
+golden is regenerated because the attack window falls inside that 20 ms: the
+  steady state is unchanged, which I checked by building the same code with the
+  ramp replaced by the old step and diffing the report — bit-identical. The
+  level moves by 2.7%, the tail by 0.2%. `lpg` already smoothed its filter every
+  16 samples.
+- `resonator` 1.12-2 — a note that arrives up to 30 ms after the last key came
+  up is still a slur. Some hosts send the note off first, and a string that is
+  still ringing is still the same string. `bowed` and `noise` do not do this on
+  purpose: a lifted bow and a re-armed noise band are new articulations, and the
+  split test shows them behaving that way. `tests/legato.cpp --split` covers the
+  case for the resonator.
+
 ## a bug in the damper, a trap in the retune, and the tests that were missing
 
 A pass over the open list: one confirmed bug, one rough edge, and the checks that

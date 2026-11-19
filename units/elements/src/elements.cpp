@@ -132,8 +132,9 @@ struct Channel {
 };
 
 struct State {
-  float pitch;     // 0..1
-  float geometry;  // 0..1
+  float pitch;        // 0..1, what the modes are tuned to right now
+  float pitch_target; // what the knob asks for; the pitch ramps towards it
+  float geometry;     // 0..1
   float b0[kModes];
   float a1[kModes];
   float a2[kModes];
@@ -386,6 +387,7 @@ void MODFX_INIT(uint32_t platform, uint32_t api) {
   (void)api;
 
   s.pitch = 0.45f;
+  s.pitch_target = s.pitch;
   s.geometry = 0.35f;
 
   updateCoefficients();
@@ -400,6 +402,16 @@ void MODFX_PROCESS(const float *main_xn, float *main_yn, const float *sub_xn,
   // hands over a separate sub output gets those same samples.
   (void)sub_xn;
   const bool second_out = sub_yn != main_yn;
+
+  // The pitch knob, as a straight line over 20 ms whatever the block size.
+  {
+    const float d = s.pitch_target - s.pitch;
+    if (d != 0.f) {
+      const float step = (float)frames * (1.f / (0.020f * kFs));
+      s.pitch = (fabsf(d) <= step) ? s.pitch_target : s.pitch + (d > 0.f ? step : -step);
+      updateCoefficients();
+    }
+  }
 
   // A channel handed digital silence with an empty bank has nothing to compute:
   // every term of its sum is zero, so its output is written and the DSP is
@@ -427,8 +439,11 @@ void MODFX_PARAM(uint8_t index, int32_t value) {
 
   switch (index) {
   case k_user_modfx_param_time:
-    s.pitch = v;
-    break;
+    // The pitch ramps in MODFX_PROCESS: a knob turn moves the modes over 20 ms
+    // instead of retuning them between one message and the next. The geometry
+    // below is a snap by design, so it still steps — that is the model change.
+    s.pitch_target = v;
+    return;
 
   case k_user_modfx_param_depth:
     s.geometry = snapGeometry(v);

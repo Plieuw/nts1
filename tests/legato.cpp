@@ -2,6 +2,9 @@
 // move the pitch to the new note without restarting the sound.
 //
 //   legato --unit bowed          prints key/value lines, checked by run.sh
+//   legato --unit bowed --split  the same, but the key comes up first and the
+//                                new one follows 5 ms later, which is how the
+//                                synth may hand a slur over
 //
 // Built like the harness (UNITKIND=0, UNITFILE), set up per unit by name, and
 // measured on the output only: the pitch by autocorrelation, the level by RMS,
@@ -80,8 +83,11 @@ static double energyAt(int start, int len, double f) {
 
 int main(int argc, char **argv) {
   const char *unit = "";
-  for (int a = 1; a < argc; ++a)
+  bool split = false;
+  for (int a = 1; a < argc; ++a) {
     if (strcmp(argv[a], "--unit") == 0) unit = argv[++a];
+    else if (strcmp(argv[a], "--split") == 0) split = true;
+  }
 
   _hook_init(0, 0x01010000);
   if (strcmp(unit, "noise") == 0) {
@@ -110,6 +116,10 @@ int main(int argc, char **argv) {
   const float levelBefore = rms(5000, 1000);
   const double c4Before = energyAt(3000, 2000, 261.63);
 
+  if (split) {
+    noteOff();                               // the key comes up first, and
+    render(240, 60 * 256);                   // 5 ms later the next one arrives
+  }
   noteOn(67 * 256);                          // the slur: no key released
   render(12000, 67 * 256);
 

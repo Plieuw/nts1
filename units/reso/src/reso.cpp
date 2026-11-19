@@ -58,8 +58,14 @@ struct Channel {
 };
 
 struct State {
-  float pitch;  // 0..1
+  float pitch;  // 0..1, what the bank is tuned to right now
   float decay;  // 0..1
+  // What the knobs are asking for. A turn ramps towards these at a fixed rate,
+  // so the twelve modes are retuned over a few milliseconds instead of being
+  // replaced between one knob message and the next, which is a zipper you can
+  // hear as soon as the sound is sustained.
+  float pitch_target;
+  float decay_target;
   float out_gain;
   float b0[kModes];
   float a1[kModes];
@@ -251,6 +257,8 @@ void MODFX_INIT(uint32_t platform, uint32_t api) {
 
   s.pitch = 0.35f;
   s.decay = 0.55f;
+  s.pitch_target = s.pitch;
+  s.decay_target = s.decay;
 
   updateCoefficients();
   clearChannel(s.ch[0]);
@@ -260,6 +268,26 @@ void MODFX_INIT(uint32_t platform, uint32_t api) {
 void MODFX_PROCESS(const float *main_xn, float *main_yn, const float *sub_xn,
                    float *sub_yn, uint32_t frames) {
   const bool has_sub = sub_yn != main_yn && sub_xn != nullptr;
+
+  // The knobs: a straight line to the target over 20 ms, the same time whatever
+  // the block size, so a fast turn and a slow one retune alike. Only recomputed
+  // when something actually moved.
+  {
+    const float step = (float)frames * (1.f / (0.020f * kFs));
+    bool moved = false;
+    const float dp = s.pitch_target - s.pitch;
+    if (dp != 0.f) {
+      s.pitch = (fabsf(dp) <= step) ? s.pitch_target : s.pitch + (dp > 0.f ? step : -step);
+      moved = true;
+    }
+    const float dd = s.decay_target - s.decay;
+    if (dd != 0.f) {
+      s.decay = (fabsf(dd) <= step) ? s.decay_target : s.decay + (dd > 0.f ? step : -step);
+      moved = true;
+    }
+    if (moved)
+      updateCoefficients();
+  }
 
   // A channel handed digital silence with an empty bank has nothing to compute:
   // every term of its sum is zero. The instrument's second timbre is silent most
@@ -298,18 +326,16 @@ void MODFX_PARAM(uint8_t index, int32_t value) {
 
   switch (index) {
   case k_user_modfx_param_time:
-    s.pitch = v;
-    break;
+    s.pitch_target = v;
+    return;
 
   case k_user_modfx_param_depth:
-    s.decay = v;
-    break;
+    s.decay_target = v;
+    return;
 
   default:
     return;
   }
-
-  updateCoefficients();
 }
 
 void MODFX_SUSPEND(void) {

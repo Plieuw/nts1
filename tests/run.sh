@@ -63,8 +63,18 @@ for u in noise resonator bowed; do
   "$CXX" -O2 -std=c++11 -o "$OUT/legato_$u" tests/legato.cpp \
     -Itests/host -I"units/$u/src" \
     -DUNITKIND=0 -DUNITFILE="\"$PWD/units/$u/src/$u.cpp\"" || { status=1; continue; }
-  if "$OUT/legato_$u" --unit "$u" > "$OUT/legato_$u.txt" &&
-     python3 tests/legato_check.py "$u" "$OUT/legato_$u.txt"; then
+  # Twice: the key overlapping, and the key released 5 ms before the next one.
+  # Only the resonator slurs in the second case: a bow that is lifted and a noise
+  # band that is re-armed are new articulations by construction, but a string
+  # that is still ringing a few milliseconds later is still the same string.
+  ok=1
+  "$OUT/legato_$u" --unit "$u" > "$OUT/legato_$u.txt" || ok=0
+  python3 tests/legato_check.py "$u" "$OUT/legato_$u.txt" || ok=0
+  if [ "$u" = resonator ]; then
+    "$OUT/legato_$u" --unit "$u" --split > "$OUT/legato_${u}_split.txt" || ok=0
+    python3 tests/legato_check.py "$u" "$OUT/legato_${u}_split.txt" || ok=0
+  fi
+  if [ "$ok" = 1 ]; then
     echo "legato $u: ok"
   else
     echo "legato $u: FAILED"
