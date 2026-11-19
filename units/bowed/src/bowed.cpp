@@ -47,6 +47,13 @@ constexpr float kReleaseTau = 0.004f;
 constexpr float kGlideCoef = 0.01f;
 constexpr float kGlideDone = 0.002f;  // a thousandth of a sample: inaudible
 
+// A slur: a new key while the previous string is still being bowed is a change
+// of fingering, not a new stroke. The period then moves in a straight line over
+// this many samples (32 ms), the same time for any interval, which is what a
+// left hand does under a slur and what makes it read as one note moving rather
+// than two notes at once.
+constexpr int kLegatoSamples = 1536;
+
 // A model is the loop's character: how lossy it is, where its body sits, and how
 // much the bow's own noise gets through. The four are a string, a struck-but-
 // sustained metal sheet, a pipe, and a hum, which is a string with the body
@@ -102,6 +109,9 @@ struct State {
   float target_period;  // where the block's pitch wants the loop to be
   uint16_t last_pitch;  // the pitch that target was computed from
   bool pitch_dirty;     // the tune knob moved, so it has to be computed again
+  int   glide_left;     // samples of legato glide still to come
+  float glide_step;     // and how far the period moves in each
+  bool  glide_pending;  // a slur started, waiting for the new pitch to arrive
 
   // The body's two resonators, as coefficients. They only depend on the model,
   // so they are computed when the model changes; the audio loop must not call
@@ -192,6 +202,8 @@ void strike(int note, float fine) {
   s.target_period = period;
   s.last_pitch = (uint16_t)(note << 8);
   s.pitch_dirty = false;
+  s.glide_left = 0;
+  s.glide_pending = false;
   v.held = true;
   // The bow does not catch the string instantly: at a low pressure it takes
   // longer, which is most of what a slow bow attack sounds like.
@@ -224,6 +236,9 @@ void OSC_INIT(uint32_t platform, uint32_t api) {
   s.last_pitch = 0xFFFFu;
   s.pitch_dirty = true;
   s.target_period = 100.f;
+  s.glide_left = 0;
+  s.glide_step = 0.f;
+  s.glide_pending = false;
   s.noise = 0.f;
   s.pressure_base = 0.55f;
   s.lfo = 0.f;
@@ -269,6 +284,14 @@ void OSC_CYCLE(const user_osc_param_t *const params, int32_t *yn,
     const float fine = (float)(params->pitch & 0xFFu) * (1.f / 255.f);
     s.target_period = periodForNote((float)note_id + fine + s.tune);
   }
+  // A slur's straight line starts where the string is now and is fixed by the
+  // new pitch the moment it arrives, so the glide takes the same time whatever
+  // the interval is.
+  if (s.glide_pending) {
+    s.glide_step = (s.target_period - v.period) * (1.f / (float)kLegatoSamples);
+    s.glide_left = kLegatoSamples;
+    s.glide_pending = false;
+  }
   bool gliding = fabsf(s.target_period - v.period) > kGlideDone;
 
   for (uint32_t i = 0; i < frames; ++i) {
@@ -279,12 +302,18 @@ void OSC_CYCLE(const user_osc_param_t *const params, int32_t *yn,
       // Retune the loop the way a string is retuned: the read pointer slides by
       // a fraction of a sample per sample, not a whole sample at a block edge.
       if (gliding) {
-        const float d = s.target_period - v.period;
-        if (fabsf(d) <= kGlideDone) {
-          v.period = s.target_period;
-          gliding = false;
+        if (s.glide_left > 0) {
+          v.period += s.glide_step;
+          if (--s.glide_left == 0)
+            v.period = s.target_period;
         } else {
-          v.period += d * kGlideCoef;
+          const float d = s.target_period - v.period;
+          if (fabsf(d) <= kGlideDone) {
+            v.period = s.target_period;
+            gliding = false;
+          } else {
+            v.period += d * kGlideCoef;
+          }
         }
         const int len = (int)v.period;
         v.len = len;
@@ -348,6 +377,18 @@ void OSC_CYCLE(const user_osc_param_t *const params, int32_t *yn,
 void OSC_NOTEON(const user_osc_param_t *const params) {
   const int note = (int)(params->pitch >> 8);
   const float fine = (float)(params->pitch & 0xFFu) * (1.f / 255.f);
+
+  // Legato: the string is still being bowed (the previous key is down, or its bow
+  // has not left yet), so this is a change of fingering. Nothing is re-seeded and
+  // the bow does not restart; the period glides to the new note and everything
+  // else keeps going. A note that arrives after the bow has left is a new stroke.
+  if (s.voice.held) {
+    s.glide_pending = true;
+    s.pitch_dirty = true;
+    s.last_pitch = 0xFFFFu;
+    return;
+  }
+
   strike(note, fine);
 }
 

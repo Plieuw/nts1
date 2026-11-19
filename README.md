@@ -107,7 +107,9 @@ Noise is the sound source everything else in this collection likes to chew on.
 What the A-knob does depends on the algorithm: velvet sets the impulse density,
 crackle the event rate, step the sample & hold rate as a multiple of the note,
 tuned the resonance of the tracking band-pass, and hybrid mixes the band-pass
-with a sine at the same pitch. White, pink and brown stay close to their usual
+with a sine at the same pitch. A key that arrives while the previous one is
+still down is a slur: nothing is restarted and the tuned algorithms walk to the
+new pitch over 32 ms, the same time for any interval. White, pink and brown stay close to their usual
 character — the tilt is on the B-knob.
 
 `Trans` puts a transient on every note-on, and the knob sweeps continuously
@@ -148,7 +150,10 @@ second, so a fast LFO walks the filters instead of stepping them block by block.
 `elements` is the same engine with the pitch set by hand, because a modulation
 effect gets no note. Here the note is available, so this one is played from the
 keyboard: a strike goes into a bank of modes and the amp envelope decides how
-long you hear it ring.
+long you hear it ring. A key that arrives while the previous one is still down
+is a slur and not a second strike: the bank is retuned along a straight line to
+the new note in 32 ms, keeping its phase, which is a body being driven at a new
+pitch rather than a second body.
 
 | Model | Object | Character |
 | --- | --- | --- |
@@ -261,6 +266,12 @@ per sample rather than jumping the read pointer at a block edge. From C4 to G4
 the period goes 184 to 123 samples; the largest sample step during that bend is
 0.031, against 0.034 for the same note standing still, so nothing clicks. Only
 when the pitch moves: a note nobody bends costs one compare per block.
+
+A key that arrives while the previous one is still down is a slur: the loop is
+not re-seeded and the bow does not restart, only the period walks to the new
+note, in a straight line over 32 ms. Measured C4 → G4: 184, 173, 150, 133, 121
+samples at 0, 10, 20 and 30 ms, ending on 123 where G4 is 122.4, with the level
+the same as before the slur.
 
 The five models are the loop's character — how lossy it is, where the body sits,
 how much noise gets through — and each one was measured to move the sound: every

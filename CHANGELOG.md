@@ -3,28 +3,37 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
-## bowed — the string follows a bend
+## the oscillators — a slur between legato notes
 
-The pitch the synth reports every block is the *current* one, not the one the
-note was struck at: a pitch bend, and the `Tune` knob, arrive there. `bowed` set
-its loop length on note-on and never touched it again, so on a bend it held the
-old note. `noise` already followed it and `resonator` retunes above five cents;
-this was the one of the three that did not.
+The mkI has no portamento to hand to a unit: its MIDI chart has no CC 5 and there
+is no glide parameter, so a custom oscillator that wants one has to make it. All
+three now do. A key that arrives while the previous one is still down is a change
+of fingering and not a new note: nothing is re-struck or restarted, and the pitch
+walks to the new note in a straight line over 32 ms — the same time for any
+interval, which is what makes it read as one note moving. A key that arrives
+after the previous one is up is a new note and behaves exactly as before, which
+is why the goldens did not move.
 
-- The period now glides to the reported pitch, per sample rather than a whole
-  sample at a block edge, which is what a string does under a bend and what keeps
-  the read pointer from jumping. A 2 ms one pole.
-- Measured on the host: C4 held, then G4 reported — the period goes from 184 to
-  123 samples, where the notes are 183.5 and 122.4. Over a 133 ms bend the
-  largest sample step is 0.031 against 0.034 for the same note standing still:
-  no click.
-- Only when it moves: the target is recomputed when the reported pitch changes,
-  not every block. 10.19 → 10.55 ns/frame.
-- There is no portamento on the mkI to follow: its MIDI chart has no CC 5 and
-  there is no glide parameter, so the base models do not glide between notes
-  either. What they do is track the pitch, and that is what this is.
+- `bowed` 1.6-0 — the bow keeps going: no re-seed of the loop, no new attack,
+  only the period moves. Measured C4 → G4: 184, 173, 150, 133, 121 samples at 0,
+  10, 20 and 30 ms, ending on 123 where G4 is 122.4, with the level unchanged.
+- `resonator` 1.12-0 — the body is retuned, not struck again: the modes keep
+  their phase and the strike is not repeated. The same measurement: 183, 166,
+  146, 128, 121, ending on 122.
+- `noise` 1.4-0 — the algorithms are not reset and no transient is fired; the
+  tuned ones follow the pitch. Measured on the tuned algorithm: the energy at C4
+  (0.0021) drops below the energy at G4 (0.0043) after the slur.
+- `bowed` also follows the pitch the synth reports *within* a note — a bend, and
+  the `Tune` knob — by sliding the loop period per sample rather than jumping the
+  read pointer at a block edge. From C4 to G4 that is 184 to 123 samples; over a
+  133 ms bend the largest sample step is 0.031 against 0.034 for the same note
+  standing still, so nothing clicks. 10.19 → 10.55 ns/frame, and only when the
+  pitch moves.
+- The legato state is cleared on init, so a re-loaded unit's first note is a new
+  note and not a glide in from the last one. That was a real bug: without it,
+  `noise`'s spectrum moved 5.8 dB in the harness.
 
-Versions: `bowed` 1.6-0.
+Versions: `noise` 1.4-0, `resonator` 1.12-0, `bowed` 1.6-0.
 
 ## irbody — the same body, from the delay slot
 

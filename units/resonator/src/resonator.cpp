@@ -268,6 +268,11 @@ struct Voice {
   float exc_env;
 };
 
+// A slur is a straight line in pitch over this many samples (32 ms), the same
+// time for any interval: a key arriving while the previous one is still down is
+// a new fingering on a body that is already ringing, not a new strike.
+constexpr int kLegatoSamples = 1536;
+
 struct State {
   // User parameters.
   int model;
@@ -286,6 +291,11 @@ struct State {
   Voice voice;
   uint32_t rng;
   float rel_coef;  // per sample decay of a released key's fade
+
+  // The slur, while one is running.
+  float glide_from_f0, glide_to_f0;
+  float glide_from_note, glide_to_note;
+  int   glide_left;
 };
 
 State s;
@@ -431,6 +441,7 @@ void strike(int note_id, float fine) {
   Voice &v = s.voice;
 
   const float note = (float)note_id + fine;
+  s.glide_left = 0;
   voiceCoefficients(v, f0ForNote(note_id, fine, s.tune), note);
   clearBank(v);
   v.note_id = note_id;
@@ -441,7 +452,11 @@ void strike(int note_id, float fine) {
 
 void updatePitch(const user_osc_param_t *const params) {
   // A struck body keeps the pitch it was struck at, but a solo line still
-  // glides with the tune knob and the fine tune the synth sends.
+  // glides with the tune knob and the fine tune the synth sends. While a slur is
+  // running the bank is being retuned on purpose, so this must not jump it to
+  // where the key already is.
+  if (s.glide_left > 0)
+    return;
   const int note_id = (int)(params->pitch >> 8);
   const float fine = (float)(params->pitch & 0xFFu) * (1.f / 255.f);
 
@@ -565,6 +580,7 @@ void OSC_INIT(uint32_t platform, uint32_t api) {
   if (s.rng == 0u)
     s.rng = 0x1234567u;
 
+  s.glide_left = 0;
   s.voice.note_id = 60;
   s.voice.held = false;
   s.voice.rel = 1.f;
@@ -576,6 +592,19 @@ void OSC_INIT(uint32_t platform, uint32_t api) {
 void OSC_CYCLE(const user_osc_param_t *const params, int32_t *yn,
                const uint32_t frames) {
   updatePitch(params);
+
+  // The slur, a block at a time: the bank is retuned along a straight line and
+  // its coefficients follow, so the modes move under a body that is still
+  // ringing instead of being replaced by a struck one.
+  if (s.glide_left > 0) {
+    const int n = ((int)frames < s.glide_left) ? (int)frames : s.glide_left;
+    s.glide_left -= n;
+    const float t = 1.f - (float)s.glide_left * (1.f / (float)kLegatoSamples);
+    voiceCoefficients(s.voice,
+                      s.glide_from_f0 + (s.glide_to_f0 - s.glide_from_f0) * t,
+                      s.glide_from_note +
+                          (s.glide_to_note - s.glide_from_note) * t);
+  }
 
   // The synth's LFO arrives as an offset on the shape parameter, which is the
   // A knob here: the decay time breathes. Re-landing the coefficients is what a
@@ -595,6 +624,23 @@ void OSC_CYCLE(const user_osc_param_t *const params, int32_t *yn,
 void OSC_NOTEON(const user_osc_param_t *const params) {
   const int note_id = (int)(params->pitch >> 8);
   const float fine = (float)(params->pitch & 0xFFu) * (1.f / 255.f);
+
+  // Legato: the previous key is still down, so the body is still being driven.
+  // It is retuned, not struck again — the modes keep their phase and the strike
+  // is not repeated, which is what makes a slur one body moving instead of two
+  // notes one after the other.
+  Voice &v = s.voice;
+  if (v.held) {
+    v.note_id = note_id;
+    s.glide_from_f0 = v.f0;
+    s.glide_to_f0 = f0ForNote(note_id, fine, s.tune);
+    s.glide_from_note = v.note;
+    s.glide_to_note = (float)note_id + fine;
+    s.glide_left = kLegatoSamples;
+    v.exc_env = 0.f;
+    return;
+  }
+
   strike(note_id, fine);
 }
 

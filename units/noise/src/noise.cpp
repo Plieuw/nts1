@@ -218,6 +218,14 @@ struct State {
   float trans_r2;
   float w0;      // phase increment per sample of the played note
   float freq;    // in Hz
+
+  // Legato: a key arriving while the previous one is still down slides the
+  // pitch instead of restarting the algorithms.
+  bool  held;
+  float glide_note;    // the note the unit is actually playing
+  float glide_step;    // per sample, for the length of the slur
+  int   glide_left;
+  bool  glide_pending;
 };
 
 State s;
@@ -392,10 +400,9 @@ void updateDerived() {
   updateTransient();
 }
 
-// Pitch and band-pass coefficients are refreshed once per buffer.
-void updatePitch(const user_osc_param_t *params) {
-  const float note = (float)(params->pitch >> 8) +
-                     (float)(params->pitch & 0xFFu) * (1.f / 255.f);
+// Pitch and band-pass coefficients are refreshed once per buffer, from the note
+// the unit is playing — during a slur that is the note between the two keys.
+void updatePitch(float note) {
   const float n = 60.f + s.keytrk * (note - 60.f) + s.tune;
   const float cn = clipminmaxf(0.f, n, 150.f);
   const uint8_t ni = (uint8_t)cn;
@@ -632,15 +639,40 @@ void OSC_INIT(uint32_t platform, uint32_t api) {
 
   s.w0 = 0.f;
   s.freq = 440.f;
+  // No key is down after a re-init, and no slur is in flight: the first note of
+  // a fresh unit must play from its own start, not glide in from the last one.
+  s.held = false;
+  s.glide_left = 0;
+  s.glide_pending = false;
+  s.glide_note = 60.f;
 
   buildTransCoefs();
   updateDerived();
   resetRuntime();
 }
 
+static const int kLegatoSamples = 1536;  // 32 ms at 48 kHz
+
 void OSC_CYCLE(const user_osc_param_t *const params, int32_t *yn,
                const uint32_t frames) {
-  updatePitch(params);
+  // The pitch the key is at, and the pitch the unit is at: a slur walks the
+  // second one to the first over a fixed time, so any interval takes as long.
+  const float note_in = (float)(params->pitch >> 8) +
+                        (float)(params->pitch & 0xFFu) * (1.f / 255.f);
+  if (s.glide_pending) {
+    s.glide_step = (note_in - s.glide_note) * (1.f / (float)kLegatoSamples);
+    s.glide_left = kLegatoSamples;
+    s.glide_pending = false;
+  }
+  if (s.glide_left > 0) {
+    const int n = ((int)frames < s.glide_left) ? (int)frames : s.glide_left;
+    s.glide_note += s.glide_step * (float)n;
+    if ((s.glide_left -= n) == 0)
+      s.glide_note = note_in;
+  } else {
+    s.glide_note = note_in;
+  }
+  updatePitch(s.glide_note);
 
   // The synth hands its LFO to the unit as an offset on the shape parameter,
   // the same way the factory oscillator adds it to its wavetable position. Half
@@ -685,7 +717,16 @@ void OSC_CYCLE(const user_osc_param_t *const params, int32_t *yn,
 }
 
 void OSC_NOTEON(const user_osc_param_t *const params) {
-  (void)params;
+  // Legato: the previous key is still down, so the sound is already there. No
+  // algorithm is restarted and no transient is fired; the pitch slides.
+  if (s.held) {
+    s.glide_pending = true;
+    return;
+  }
+  s.held = true;
+  s.glide_left = 0;
+  s.glide_note = (float)(params->pitch >> 8) +
+                 (float)(params->pitch & 0xFFu) * (1.f / 255.f);
   resetRuntime();
   s.trans_env = 1.f;
   s.trans_env2 = 1.f;
@@ -693,6 +734,7 @@ void OSC_NOTEON(const user_osc_param_t *const params) {
 
 void OSC_NOTEOFF(const user_osc_param_t *const params) {
   (void)params;
+  s.held = false;
 }
 
 void OSC_MUTE(const user_osc_param_t *const params) {
