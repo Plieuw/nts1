@@ -30,7 +30,7 @@
  * only cheaper but better.
  *
  * A-knob (TIME)   which body: violin, cello, piano, guitar, wood, steel,
- *                 clarinet, drum
+ *                 clarinet, drum, box
  * B-knob (DEPTH)  damping of the wet signal, dark .. open
  * DEL + B knob    dry/wet mix
  *
@@ -71,6 +71,15 @@ constexpr float kMaxModeTau = 0.022f;  // the guitar's mode decay, seconds
 constexpr float kMaxTailTau = 0.010f;  // and the decay of its diffuse tail
 constexpr int kAp1Len = 96;     // 2.0 ms allpass
 constexpr int kPresetCount = irmodel::kPresetCount;
+// The box is the one body played from delays instead of resonances. A soundbox
+// is a cavity, and a cavity reflects: six taps between four fifths and three and
+// a half milliseconds are its walls, with alternating signs so the train does
+// not sound like one comb. The history is 256 samples, so the longest tap (173)
+// fits with eighty to spare. The buffer is shared like the tail is: it is the
+// input's history, not an engine's.
+constexpr int kEarlyLen = 256;
+constexpr int kEarlyTaps = irmodel::kBoxTaps;   // the walls, from the model
+float g_in[kEarlyLen];
 // The eight bodies are single points on the knob's travel and landing on one by
 // hand is luck. The quarter steps below already land on a body within 1.8% of
 // the travel; this band widens that to 3%, so on each side of a body there is a
@@ -172,6 +181,10 @@ struct TailParams {
  *---------------------------------------------------------------------------*/
 
 struct Engine {
+  // How much of the box's reflection train this body wants: one at the box, zero
+  // at every other body, and a walk between the two during a crossfade.
+  float early;
+
   // Resonances, as two pole resonators driven by the input.
   int modes;
   float a1[kMaxModes];
@@ -205,6 +218,7 @@ struct State {
   float wet;    // 0..1
   float damp_coef;
   float damp_lp;
+  int in_pos;   // write position in the input history the box's taps read
   int ready;    // set once the first engine has been built
   float gate;   // 0..1, silence gate at the output
   int quiet;    // samples of true silence behind us
@@ -246,6 +260,9 @@ void clearBuffers() {
     g_ap4[0][i] = 0.f;
     g_ap4[1][i] = 0.f;
   }
+  for (int i = 0; i < kEarlyLen; ++i)
+    g_in[i] = 0.f;
+  s.in_pos = 0;
   clearTail();
 }
 
@@ -270,7 +287,7 @@ constexpr float kOutTrim = 0.043f;
 // dB against the loudest of them. Without these the knob jumps by up to 9 dB
 // between bodies (steel is the quiet one), and the crossfade would not hide it.
 const float kLevelDb[kPresetCount] = {6.8f, -0.3f, 2.8f, 2.1f,
-                                      0.2f, 8.8f, -1.9f, 1.0f};
+                                      0.2f, 8.8f, -1.9f, 1.0f, 0.0f};
 
 const Trim kTrim[kPresetCount] = {
     {0.638f, 4.167f},  // violin
@@ -281,6 +298,7 @@ const Trim kTrim[kPresetCount] = {
     {0.389f, 5.055f},  // steel
     {1.131f, 5.749f},  // clarinet
     {0.501f, 1.707f},  // drum
+    {1.000f, 4.000f},  // box
 };
 
 // Builds one engine for a preset. Only ever called from the parameter callback
@@ -316,8 +334,11 @@ void buildEngine(int slot, float pos) {
   const irmodel::Preset &pa = irmodel::kPresets[a];
   const irmodel::Preset &pb = irmodel::kPresets[b];
   const float bright = pa.bright + (pb.bright - pa.bright) * t;
+  const float ea = (a == kPresetCount - 1) ? 1.f : 0.f;
+  const float eb = (b == kPresetCount - 1) ? 1.f : 0.f;
   Engine &e = g_eng[slot];
   clearEngine(e);
+  e.early = ea + (eb - ea) * t;
 
   // Resonances. The mode list, its frequencies and its damping come straight
   // from ir_model.h, so a violin here is the violin the old unit convolved with.
@@ -536,6 +557,7 @@ void REVFX_INIT(uint32_t platform, uint32_t api) {
   s.ready = 0;
   s.gate = 1.f;
   s.quiet = 0;
+  s.in_pos = 0;
 
   updateDamping();
   clearBuffers();
@@ -580,6 +602,20 @@ void REVFX_PROCESS(float *xn, uint32_t frames) {
   for (int i = 0; i < nframes; ++i) {
     const float in = 0.5f * (xn[2 * i] + xn[2 * i + 1]);
 
+    // The box's walls: the input read back at six short delays. The history is
+    // written whether or not a box is playing, because a body can be switched to
+    // mid note and the reflections must not start from nothing.
+    g_in[s.in_pos] = in;
+    float early = 0.f;
+    for (int r = 0; r < kEarlyTaps; ++r) {
+      int q = s.in_pos - irmodel::kBoxTapDelay[r];
+      if (q < 0)
+        q += kEarlyLen;
+      early += irmodel::kBoxTapGain[r] * g_in[q];
+    }
+    if (++s.in_pos >= kEarlyLen)
+      s.in_pos = 0;
+
     // A body is not a reverb. Its own tail is 8 to 35 ms, so anything still
     // sounding 20 ms after the input went quiet is state being recited rather
     // than a body: the gate shuts over 10 ms and the unit outputs silence until
@@ -599,10 +635,14 @@ void REVFX_PROCESS(float *xn, uint32_t frames) {
     const int sa = s.active;
     float mid, right;
     bankSample(sa, g_eng[sa], in, mid, right);
+    mid += early * g_eng[sa].early;
+    right += early * g_eng[sa].early;
     if (s.target >= 0) {
       const float f = s.fade;
       float m2, r2;
       bankSample(s.target, g_eng[s.target], in, m2, r2);
+      m2 += early * g_eng[s.target].early;
+      r2 += early * g_eng[s.target].early;
       mid = (1.f - f) * mid + f * m2;
       right = (1.f - f) * right + f * r2;
       s.fade += 1.f / (float)kFadeSamples;

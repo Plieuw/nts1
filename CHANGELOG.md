@@ -3,6 +3,27 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## irbody — a soundbox played from delays
+
+Every body in this unit was a bank of resonances plus a diffuse tail. `box` is
+the first with no modes at all: a cavity is not a set of partials, it is a train
+of reflections between its walls.
+
+- Six taps off a 5 ms history of the input — 0.79, 1.17, 1.75, 2.33, 2.90 and
+  3.60 ms, alternating in sign — over the same damped tail the other bodies stand
+  in. The taps are the walls, the tail is the wood.
+- The reference response is 40 dB down at 17 ms where the modal bodies take 35 to
+  80 ms (`ir/box.wav`): a box, not a room. The taps live in `ir_model.h`, so the
+  WAV and the firmware are the same six delays.
+- Levelled with the rest: −1.6 dB against a dry plucked note with the knobs at the
+  middle, between the drum at −1.2 and the steel at +1.1. Walking the A knob from
+  the drum into the box steps by at most 0.7 dB between neighbouring quarter
+  steps, and the knob now has nine bodies, 128 counts apart with the same 3%
+  hold on either side of each.
+- The history buffer is 1 KB of SRAM; the taps cost six multiply-adds a sample.
+
+Versions: `irbody` 1.12-0.
+
 ## resonator — Damp is a damper, not a second decay
 
 `Damp` shared the job of `B`: it shortened the ring of the high modes and left

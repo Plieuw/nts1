@@ -53,7 +53,8 @@ instrument: `tuned` with `Keytrk` at 100.
 
 `violin` for a boxy midrange, `cello` for the same a size up, `piano` for a large
 soundboard, `guitar` for a bright box, `wood` for a knock, `steel` for a plate,
-`clarinet` for a tube, `drum` for a shell. The A knob is a continuum: park it
+`clarinet` for a tube, `drum` for a shell, `box` for a hollow wooden cavity — the
+only body built from delay taps instead of resonances, and the shortest of them. The A knob is a continuum: park it
 between two names to hear the in-between body. `B` is damping, SHIFT is the mix.
 
 ## Combinations that work

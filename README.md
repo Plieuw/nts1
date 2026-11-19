@@ -454,10 +454,10 @@ band moves 174 of 1024 positions, by at most 1.65 dB.
 ### irbody — reverb effect (instrument bodies)
 
 Puts the synth inside a body: a violin or cello soundbox, a piano soundboard, a
-guitar, a marimba bar, a metal plate, a clarinet bore, a drum shell. The bodies
-are models rather than samples, and the model is played instead of convolved: a
-bank of resonances for the object's own modes and a network of delay lines for
-the diffuse part. It is a reverb effect, so it runs last: whatever the modulation
+guitar, a marimba bar, a metal plate, a clarinet bore, a drum shell, and a hollow
+wooden box. The bodies are models rather than samples, and the model is played
+instead of convolved: a bank of resonances for the object's own modes and a
+network of delay lines for the diffuse part. It is a reverb effect, so it runs last: whatever the modulation
 units and the delay have made is what it puts in the body.
 
 The models are physical: the violin, cello and guitar use the air and wood
@@ -497,7 +497,7 @@ synth has already taken the note down.
 
 | Control | Function |
 | --- | --- |
-| A (TIME) | body: violin, cello, piano, guitar, wood, steel, clarinet, drum |
+| A (TIME) | body: violin, cello, piano, guitar, wood, steel, clarinet, drum, box |
 | B (DEPTH) | damping of the wet signal, dark .. open |
 | DEL + B | dry/wet |
 
@@ -516,10 +516,21 @@ body does, and it is the one place where this is not only cheaper but better.
 
 The levels of the bank and the tail per body are fitted, band by band, to the
 responses the old version convolved with, and the result is within 1.3 to 2.5 dB
-per third-octave band (weighted by level) for six of the eight, 4 dB for the
-clarinet and 7 dB for the marimba bar, whose modes sit high and leave the low end
-to the tail. Fed a musical signal at full wet, all eight land within 0.4 dB of
-where they were.
+per third-octave band (weighted by level) for six of the eight modal bodies, 4 dB
+for the clarinet and 7 dB for the marimba bar, whose modes sit high and leave the
+low end to the tail. Fed a musical signal at full wet, those eight land within
+0.4 dB of where they were; the box is new and was levelled against them.
+
+The last body is the odd one: `box` has no resonances at all. A soundbox is a
+cavity, and a cavity's character is the train of reflections between its walls,
+so the unit plays six delay taps — 0.79, 1.17, 1.75, 2.33, 2.90 and 3.60 ms,
+alternating in sign — off a 5 ms history of the input, over the same damped tail
+every body stands in. The taps are the walls and the tail is the wood. Its
+reference response is 40 dB down at 17 ms, where the modal bodies take 35 to
+80 ms, and with the knobs at the middle it sits at −1.6 dB against the dry note,
+between the drum at −1.2 and the steel at +1.1. Walking the A knob from the drum
+into the box changes the level by at most 0.7 dB between neighbouring quarter
+steps, so the extra body costs nothing at the seam.
 
 A switch crossfades between two engines over 85 ms, so turning the knob cannot
 click. Everything is set up in the parameter callback: turning the knob builds

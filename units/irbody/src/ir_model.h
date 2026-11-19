@@ -42,7 +42,7 @@
 namespace irmodel {
 
 static const int kIrLen = 4096;  // 85.3 ms at 48 kHz
-static const int kPresetCount = 8;
+static const int kPresetCount = 9;
 static const float kFs = 48000.f;
 static const float kPi = 3.14159265358979f;
 
@@ -123,6 +123,25 @@ static const Mode kDrum[] = {
     {4.300f, 0.15f, 0.28f},
 };
 
+// The box is played from delays, not from modes: a cavity reflects. These are
+// its walls, six taps between four fifths of a millisecond and three and a half,
+// alternating in sign so the train reads as a box and not as one comb. The unit
+// reads them as its early reflections (irbody.cpp) and the renderer below draws
+// the same six into the reference response, so the two are the same object.
+static const int kBoxTaps = 6;
+static const int kBoxTapDelay[kBoxTaps] = {38, 56, 84, 112, 139, 173};
+static const float kBoxTapGain[kBoxTaps] = {0.90f, -0.62f, 0.45f,
+                                            -0.33f, 0.24f, -0.17f};
+
+// --- box: the one body with no resonances at all. A soundbox is a cavity: its
+// character is the train of reflections between its walls, a handful of delays a
+// few milliseconds long, and the wood that takes the top off each pass. The unit
+// plays exactly that (a delay line with taps, see irbody.cpp); the model here
+// keeps the same shape for the WAV reference.
+static const Mode kBox[] = {
+    {1.000f, 0.00f, 1.00f},
+};
+
 static const Preset kPresets[kPresetCount] = {
     // name      modes    count  f0     tau     noise  n_tau   bright impact
     {"violin", kViolin, 11, 280.f, 0.020f, 0.12f, 0.008f, 0.60f, 0.35f},
@@ -133,6 +152,7 @@ static const Preset kPresets[kPresetCount] = {
     {"steel", kSteel, 8, 430.f, 0.035f, 0.25f, 0.020f, 0.75f, 0.35f},
     {"clarinet", kClarinet, 9, 131.f, 0.022f, 0.15f, 0.010f, 0.45f, 0.30f},
     {"drum", kDrum, 7, 90.f, 0.028f, 0.35f, 0.013f, 0.55f, 0.60f},
+    {"box", kBox, 0, 0.f, 0.008f, 0.35f, 0.009f, 0.55f, 0.50f},
 };
 
 #ifdef IRMODEL_RENDER
@@ -211,12 +231,13 @@ static void render(float *h, int preset) {
       env_hi *= c_hi;
     }
 
-    // Early reflections give the spaces their size.
+    // The box's walls: the same six taps the unit reads, drawn into the
+    // response so the reference and the firmware are one object.
     if (p.mode_count == 0) {
-      for (int r = 0; r < 10; ++r) {
-        const int d = (int)((0.002f + 0.013f * rand01()) * kFs);
+      for (int r = 0; r < kBoxTaps; ++r) {
+        const int d = kBoxTapDelay[r];
         if (d < kIrLen)
-          h[d] += randbi() * 0.7f * expf(-0.25f * (float)r);
+          h[d] += 0.5f * kBoxTapGain[r];
       }
     }
   }
