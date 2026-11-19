@@ -3,6 +3,29 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## bowed — the string follows a bend
+
+The pitch the synth reports every block is the *current* one, not the one the
+note was struck at: a pitch bend, and the `Tune` knob, arrive there. `bowed` set
+its loop length on note-on and never touched it again, so on a bend it held the
+old note. `noise` already followed it and `resonator` retunes above five cents;
+this was the one of the three that did not.
+
+- The period now glides to the reported pitch, per sample rather than a whole
+  sample at a block edge, which is what a string does under a bend and what keeps
+  the read pointer from jumping. A 2 ms one pole.
+- Measured on the host: C4 held, then G4 reported — the period goes from 184 to
+  123 samples, where the notes are 183.5 and 122.4. Over a 133 ms bend the
+  largest sample step is 0.031 against 0.034 for the same note standing still:
+  no click.
+- Only when it moves: the target is recomputed when the reported pitch changes,
+  not every block. 10.19 → 10.55 ns/frame.
+- There is no portamento on the mkI to follow: its MIDI chart has no CC 5 and
+  there is no glide parameter, so the base models do not glide between notes
+  either. What they do is track the pitch, and that is what this is.
+
+Versions: `bowed` 1.6-0.
+
 ## irbody — the same body, from the delay slot
 
 `irbody` is now built twice from one source: `irbody.ntkdigunit` for REVERB and

@@ -255,6 +255,13 @@ before it is over, which is what a bow does to a string anyway.
 | Edit 5 | `Level` |
 | Edit 6 | `Attack`: how long the bow takes to catch the string |
 
+The string follows the pitch the synth reports, block by block: a bend, and the
+`Tune` knob, retune the loop the way a string is retuned, by sliding the period
+per sample rather than jumping the read pointer at a block edge. From C4 to G4
+the period goes 184 to 123 samples; the largest sample step during that bend is
+0.031, against 0.034 for the same note standing still, so nothing clicks. Only
+when the pitch moves: a note nobody bends costs one compare per block.
+
 The five models are the loop's character — how lossy it is, where the body sits,
 how much noise gets through — and each one was measured to move the sound: every
 model answers the brightness knob by at least 18 dB in some band, and the whole

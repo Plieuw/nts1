@@ -38,6 +38,15 @@ constexpr float kDcCoef = 6.2831853f * 12.f / 48000.f;  // 12 Hz
 // 28 ms, short enough that no release setting has to fight it.
 constexpr float kReleaseTau = 0.004f;
 
+// How fast the loop follows the pitch the synth reports. A bend arrives as one
+// value per block, and moving the period a whole sample at a block edge clicks;
+// gliding the period per sample is what a string does when it is bent. 2 ms is
+// short enough that a bend feels immediate, long enough that the block edges
+// disappear. A note that is not bent has nothing to do: the strike already set
+// exactly this period.
+constexpr float kGlideCoef = 0.01f;
+constexpr float kGlideDone = 0.002f;  // a thousandth of a sample: inaudible
+
 // A model is the loop's character: how lossy it is, where its body sits, and how
 // much the bow's own noise gets through. The four are a string, a struck-but-
 // sustained metal sheet, a pipe, and a hum, which is a string with the body
@@ -66,6 +75,7 @@ struct Voice {
   int   len;        // integer part of the period
   int   pos;
   float frac;       // fractional part, for the interpolating read
+  float period;     // the whole period, len + frac, as the pitch tracking moves it
   float lp;         // loop lowpass state
   float dc;         // the loop's own DC, taken out at 12 Hz
   float body1_y1, body1_y2;
@@ -89,6 +99,9 @@ struct State {
   float rel_coef;   // per sample fall of the bow when the key comes up
   float noise;      // the bow's own noise, one state
   float lfo;
+  float target_period;  // where the block's pitch wants the loop to be
+  uint16_t last_pitch;  // the pitch that target was computed from
+  bool pitch_dirty;     // the tune knob moved, so it has to be computed again
 
   // The body's two resonators, as coefficients. They only depend on the model,
   // so they are computed when the model changes; the audio loop must not call
@@ -137,14 +150,23 @@ void resetVoice(Voice &v) {
   v.len = 100;
   v.pos = 0;
   v.frac = 0.f;
+  v.period = 100.f;
 }
 
-void setPeriod(Voice &v, float f0) {
-  float period = kFs / f0;
+// The period of a note, in samples. Both the strike and the pitch tracking go
+// through this, so a note that is not bent sits bit for bit on the period the
+// strike set and nothing moves.
+inline float periodForNote(float n) {
+  float period = kFs / (440.f * arc_pow2f((n - 69.f) * (1.f / 12.f)));
   if (period > (float)(kMaxPeriod - 2))
     period = (float)(kMaxPeriod - 2);
   if (period < 2.f)
     period = 2.f;
+  return period;
+}
+
+void setPeriod(Voice &v, float period) {
+  v.period = period;
   v.len = (int)period;
   v.frac = period - (float)v.len;
 }
@@ -163,7 +185,13 @@ void strike(int note, float fine) {
   Voice &v = s.voice;
   resetVoice(v);
   const float n = (float)note + fine + s.tune;
-  setPeriod(v, 440.f * arc_pow2f((n - 69.f) * (1.f / 12.f)));
+  const float period = periodForNote(n);
+  setPeriod(v, period);
+  // The target is where the loop already is, or the first block would glide the
+  // note towards whatever the last one was.
+  s.target_period = period;
+  s.last_pitch = (uint16_t)(note << 8);
+  s.pitch_dirty = false;
   v.held = true;
   // The bow does not catch the string instantly: at a low pressure it takes
   // longer, which is most of what a slow bow attack sounds like.
@@ -193,6 +221,9 @@ void OSC_INIT(uint32_t platform, uint32_t api) {
   s.level = 0.5f;
   s.attack = 0.35f;
   s.tune = 0.f;
+  s.last_pitch = 0xFFFFu;
+  s.pitch_dirty = true;
+  s.target_period = 100.f;
   s.noise = 0.f;
   s.pressure_base = 0.55f;
   s.lfo = 0.f;
@@ -225,10 +256,40 @@ void OSC_CYCLE(const user_osc_param_t *const params, int32_t *yn,
   // bow has left writes nothing, and the output stays at zero.
   Voice &v = s.voice;
 
+  // The pitch the synth reports is the current one, not the one the note was
+  // struck at: a bend, a glide from the arpeggiator and the tune knob all arrive
+  // here, a block at a time. An untuned fork does not need to move at all, so the
+  // per sample step below is skipped unless the target has left the loop behind.
+  // Only when it moved: an `arc_pow2f` every block for a note nobody is bending
+  // is 5% of this unit, and the compare is one instruction.
+  if (params->pitch != s.last_pitch || s.pitch_dirty) {
+    s.last_pitch = params->pitch;
+    s.pitch_dirty = false;
+    const int note_id = (int)(params->pitch >> 8);
+    const float fine = (float)(params->pitch & 0xFFu) * (1.f / 255.f);
+    s.target_period = periodForNote((float)note_id + fine + s.tune);
+  }
+  bool gliding = fabsf(s.target_period - v.period) > kGlideDone;
+
   for (uint32_t i = 0; i < frames; ++i) {
     float mix = 0.f;
 
     if (v.held || v.env >= 1e-4f) {
+
+      // Retune the loop the way a string is retuned: the read pointer slides by
+      // a fraction of a sample per sample, not a whole sample at a block edge.
+      if (gliding) {
+        const float d = s.target_period - v.period;
+        if (fabsf(d) <= kGlideDone) {
+          v.period = s.target_period;
+          gliding = false;
+        } else {
+          v.period += d * kGlideCoef;
+        }
+        const int len = (int)v.period;
+        v.len = len;
+        v.frac = v.period - (float)len;
+      }
 
       // The bow: pressure comes up over the attack, and when the key comes up
       // the bow leaves at once. The loop would hold the note for seconds, but
@@ -348,6 +409,7 @@ void OSC_PARAM(uint16_t index, uint16_t value) {
 
   case k_user_osc_param_id4:  // bipolar percent, 100 is the centre
     s.tune = ((float)value - 100.f) * 0.24f;
+    s.pitch_dirty = true;  // the glide picks it up on the next block
     break;
 
   case k_user_osc_param_id5:  // level, 0 .. 100
