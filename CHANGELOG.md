@@ -13,7 +13,7 @@ of changing how long it rings.
 
 - Measured at full damp, a struck C6 loses 7.4 dB of RMS and 7.0 dB of peak,
   where C4 loses 1.7 dB of RMS and 1.4 dB of peak: the signature of a low pass,
-  not of a decay. At the default (20) the corner sits at 13 kHz and the level at
+  not of a decay. At the default (20) the corner sits at 11 kHz and the level at
   C4 and C6 is within 0.06 dB of where it was.
 - `B` owns the decay of the high modes alone now, which is why the golden moved:
   the modes no longer die faster when the knob turns, the top is filtered
