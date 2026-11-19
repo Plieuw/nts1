@@ -3,6 +3,29 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## resonator — Damp is a damper, not a second decay
+
+`Damp` shared the job of `B`: it shortened the ring of the high modes and left
+the attack as it was, which moved the RMS by 0.01 dB over the knob's whole travel
+at C6 — a control nobody could hear. It is a damper now: a one pole low pass on
+the voice from 24 kHz down to 500 Hz, so it mutes what the body radiates instead
+of changing how long it rings.
+
+- Measured at full damp, a struck C6 loses 7.4 dB of RMS and 7.0 dB of peak,
+  where C4 loses 1.7 dB of RMS and 1.4 dB of peak: the signature of a low pass,
+  not of a decay. At the default (20) the corner sits at 13 kHz and the level at
+  C4 and C6 is within 0.06 dB of where it was.
+- `B` owns the decay of the high modes alone now, which is why the golden moved:
+  the modes no longer die faster when the knob turns, the top is filtered
+  instead. The golden's level and peak are where they were (0.2229 → 0.2221 RMS,
+  0.501 → 0.498 peak), and the filter's own cost is one multiply-add per sample
+  (17.4 → 18.3 ns/frame on the host bench with only that line differing).
+- The coefficient is `1 - 2^(-2 pi fc / fs * log2 e)`. `arc_expneg` is a series
+  for small arguments: at 24 kHz it returns a value past one, which as a one
+  pole coefficient is a filter that grows instead of one that damps.
+
+Versions: `resonator` 1.11-0.
+
 ## barber — the allpass had the wrong sign
 
 `allpassCoef` returned `(1 - t)/(1 + t)`. The first-order allpass in this unit is

@@ -58,7 +58,7 @@
  * Edit 3 Pos       where the strike lands, 0 .. 1 across the object
  * Edit 4 Tune      +- 24 semitones
  * Edit 5 Level
- * Edit 6 Damp      extra damping of the high modes
+ * Edit 6 Damp      a damper on the body: a low pass from 24 kHz down to 500 Hz
  */
 
 #include "userosc.h"
@@ -277,9 +277,11 @@ struct State {
   float bright;   // 0..1, the B knob
   float strike;   // 0..1
   float pos;      // 0..1
-  float damp;     // 0..1
-  float level;    // 0..1
-  float tune;     // semitones
+  float damp;       // 0..1, the damper
+  float damp_coef;  // one pole coefficient of the damper
+  float damp_lp;    // the damper's state
+  float level;      // 0..1
+  float tune;       // semitones
 
   Voice voice;
   uint32_t rng;
@@ -295,6 +297,19 @@ void clearBank(Voice &v) {
   }
   v.exc_lp = 0.f;
   v.exc_env = 0.f;
+  s.damp_lp = 0.f;
+}
+
+// The damper: one pole from 24 kHz down to 500 Hz. A real damper is felt on the
+// body, so it mutes what the body radiates and leaves the low modes ringing; it
+// is not a second decay knob.
+void updateDamping() {
+  const float fc = 24000.f * arc_pow2f(-5.6f * s.damp);
+  // exp(-2 pi fc / fs) through 2^x: arc_expneg is a series for small
+  // arguments and at 24 kHz it returns a coefficient past one, which is a
+  // filter that grows instead of one that damps.
+  const float w = 6.2831853f * fc * (1.f / kFs) * 1.44269504f;
+  s.damp_coef = 1.f - arc_pow2f(-w);
 }
 
 void silenceAll() {
@@ -323,8 +338,10 @@ void voiceCoefficients(Voice &v, float f0, float note) {
   const ModelSpec &spec = kSpec[s.model];
   const float *const ratio = spec.ratio;
   const float tau = 0.1f * arc_pow2f(6.9f * s.decay) * spec.decay;   // 0.1 s .. 12 s
-  const float spread =
-      (0.32f - 0.28f * s.bright + 0.30f * s.damp) * spec.spread;
+  // Brightness owns how long the high modes live. Damp used to share that job
+  // and shortened the ring; it is a damper now (a low pass on the voice, see
+  // render), so the knob has one meaning instead of two.
+  const float spread = (0.32f - 0.28f * s.bright) * spec.spread;
 
   v.f0 = f0;
   v.note = note;
@@ -514,7 +531,8 @@ void render(q31_t *__restrict y, const uint32_t frames) {
     }
     const float acc = sum * gain;
 
-    *y++ = f32_to_q31(osc_softclipf(0.08f, acc * mix));
+    s.damp_lp += (acc - s.damp_lp) * s.damp_coef;
+    *y++ = f32_to_q31(osc_softclipf(0.08f, s.damp_lp * mix));
   }
 }
 
@@ -539,6 +557,8 @@ void OSC_INIT(uint32_t platform, uint32_t api) {
   s.damp = 0.2f;
   s.level = 0.8f;
   s.tune = 0.f;
+  s.damp_lp = 0.f;
+  updateDamping();
   s.rel_coef = arc_expneg(1.f / (kReleaseTau * kFs));
 
   s.rng = 0x9E3779B9u ^ osc_mcu_hash();
@@ -648,6 +668,8 @@ void OSC_PARAM(uint16_t index, uint16_t value) {
 
   case k_user_osc_param_id6:  // 0 .. 100
     s.damp = clipminmaxf(0.f, (float)value * 0.01f, 1.f);
+    updateDamping();
+    reshape = false;
     break;
 
   default:

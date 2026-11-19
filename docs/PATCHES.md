@@ -27,7 +27,8 @@ the display unless noted.
 | reed | narrow, buzzy, sustains oddly | `A` 60, B 30 | a drone under everything |
 
 `Strike` is the hammer, `Pos` is where it hits (a mode with a node there stays
-quiet), `Damp` shortens the ring, `A` is the decay time and `B` is brightness.
+quiet), `Damp` closes a low pass on the body from 24 kHz down to 500 Hz, `A` is
+the decay time and `B` is brightness.
 
 ## bowed: which of the five
 

@@ -179,7 +179,7 @@ long you hear it ring.
 | Edit 3 | `Pos`: where the strike lands across the object |
 | Edit 4 | `Tune`: ± 24 semitones |
 | Edit 5 | `Level` |
-| Edit 6 | `Damp`: extra damping of the high modes |
+| Edit 6 | `Damp`: a damper on the body, a low pass from 24 kHz down to 500 Hz |
 
 A model is a ratio set plus the way that object behaves under the knobs. On top
 of the ratios each one carries three numbers: how long it rings, how much faster
@@ -188,8 +188,14 @@ That is what separates the two bars tuned to 1 : 4 : 10 — a xylophone is gone 
 a fraction of a second with nothing but attack, a vibraphone is still ringing
 when the next note comes — and it is how the wood block, the log drum and the
 tabla sit next to the glass and the bell instead of sounding like shorter
-versions of them. The models keep the knobs: `Damp` darkens any of them, `Strike`
-and `Pos` move the attack, `Tune` moves the note.
+versions of them. The models keep the knobs: `Strike` and `Pos` move the attack,
+`Tune` moves the note, and `Damp` is a damper on the body — a one pole low pass on
+the voice, from 24 kHz down to 500 Hz. It is not a second decay: a struck C6
+loses 7.4 dB of RMS at full damp where C4 loses 1.7, and the ring itself is
+untouched, so `B` is still the knob that decides how long the high modes live.
+Before 1.11-0 the knob only changed how fast those modes died, which moved the
+RMS by 0.01 dB over its whole travel at C6 — a control that did nothing you could
+hear.
 
 The strike goes straight into the modes instead of through a coupling factor, so
 a short string is not a hundred times louder than a long bell: the decay knob
