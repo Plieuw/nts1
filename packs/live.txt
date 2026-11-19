@@ -1,0 +1,12 @@
+# What is maintained: the three oscillators, and the units that changed on
+# 2026-11-19. lpg and barber are finished as they are and are not rebuilt into a
+# release any more; they stay in the repository and in the build.
+#
+#   ./scripts/build.sh --pack live
+noise
+resonator
+bowed
+reso
+elements
+irbody
+irbody_delay
