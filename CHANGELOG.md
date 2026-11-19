@@ -3,6 +3,23 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## irbody — the same body, from the delay slot
+
+`irbody` is now built twice from one source: `irbody.ntkdigunit` for REVERB and
+`irbody_delay.ntkdigunit` for DELAY. Same DSP, same bodies, same knobs; only
+the module type, its linker script and the magic in the hook table differ.
+
+- Why it exists: on the mkI a custom delay and a custom reverb share one
+  runtime, so `barber` and `irbody` cannot be enabled together. With the body in
+  the delay slot the reverb slot can stay on a stock reverb, which is the only
+  way to have a body and a reverb at once.
+- The delay build is a two-line wrapper that includes the reverb unit's source,
+  so the two cannot drift; the level metrics of both builds are identical.
+- One thing to know: in DELAY the body hears the sound before that stock reverb
+  rather than after everything, which is the same place `barber` sits in.
+
+Versions: `irbody` 1.13-0, `irbody_delay` 1.13-0.
+
 ## irbody — the same samples, less work
 
 A pass over the unit against the SDK's own habits: work that was multiplied by

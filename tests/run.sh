@@ -11,11 +11,11 @@ OUT=${OUT:-/tmp/nts1-tests}
 mkdir -p "$OUT"
 
 status=0
-for u in noise resonator bowed lpg reso elements barber irbody; do
+for u in noise resonator bowed lpg reso elements barber irbody irbody_delay; do
   case $u in
     noise|resonator|bowed)   kind=0 ;;
     lpg|reso|elements)       kind=1 ;;
-    barber)                  kind=2 ;;
+    barber|irbody_delay)     kind=2 ;;
     irbody)                  kind=3 ;;
   esac
   "$CXX" -O2 -std=c++11 -o "$OUT/$u" tests/harness.cpp \

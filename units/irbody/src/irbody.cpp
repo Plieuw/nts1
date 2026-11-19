@@ -42,7 +42,25 @@
  * never in the audio callback.
  */
 
+// The same DSP is also built for the delay slot, where the module type and its
+// linker script differ but the hooks do not: a delfx unit has the same
+// _hook_init/_process/_param set as a revfx one, only the magic in the hook
+// table and the slot it lands in are different. units/irbody_delay is that
+// build; it defines NTS1_DELAY and this file picks the matching header.
+#if defined(NTS1_DELAY)
+#include "userdelfx.h"
+#define REVFX_INIT    DELFX_INIT
+#define REVFX_PROCESS DELFX_PROCESS
+#define REVFX_PARAM   DELFX_PARAM
+#define REVFX_SUSPEND DELFX_SUSPEND
+#define REVFX_RESUME  DELFX_RESUME
+// The parameter enums are the same three values under the other name.
+#define k_user_revfx_param_time        k_user_delfx_param_time
+#define k_user_revfx_param_depth       k_user_delfx_param_depth
+#define k_user_revfx_param_shift_depth k_user_delfx_param_shift_depth
+#else
 #include "userrevfx.h"
+#endif
 #include "../../common/program_start.h"
 #include "../../common/silence.h"
 

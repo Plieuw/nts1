@@ -46,6 +46,7 @@ space model in the reverb slot — a unit for every user slot the instrument has
 | `elements` | MOD | Geometry morphing resonator: string, membrane, plate, bell | `elements.ntkdigunit` |
 | `barber` | DELAY | Barberpole phaser that rises or falls forever | `barber.ntkdigunit` |
 | `irbody` | REVERB | Instrument bodies — soundbox, tube, shell — played as filters | `irbody.ntkdigunit` |
+| `irbody` | DELAY | The same body model, built for the delay slot | `irbody_delay.ntkdigunit` |
 
 The NTS-1 has one slot per type, so `noise` and `resonator` are alternatives
 for the oscillator slot, and `lpg`, `reso` and `elements` are alternatives for
@@ -53,6 +54,11 @@ the modulation slot. `barber` and `irbody` are alternatives too, for a
 reason that is easy to miss: on the mkI a custom **delay** and a custom
 **reverb** are loaded into the same runtime, so only one of the two can be a
 custom effect at a time (see [Stacking the units](#stacking-the-units)).
+
+That is why `irbody` ships twice: `irbody_delay.ntkdigunit` is the same DSP
+built as a delay unit, so the body can sit in DELAY and leave the reverb slot on
+a stock reverb. It is the only way to have a body and a reverb at the same time.
+Both files come from one source in `units/irbody/src`, so they cannot drift.
 
 Note that there is no user slot for an envelope generator on the NTS-1: the MOD
 slot only accepts (audio) modulation effects. `lpg` is the way to get an
@@ -551,6 +557,7 @@ What the mkI *does* constrain is which slots can be full at the same time:
 | `noise` or `resonator` with any of them | yes | the oscillator and the effect slots are independent |
 | `barber` in DELAY with a stock reverb | yes | a stock delay and a stock reverb do not collide |
 | `irbody` in REVERB with a stock delay | yes | same |
+| `irbody` (delay build) in DELAY with a stock reverb | yes | the body is the custom effect, the reverb stays stock |
 | `barber` **and** `irbody` together | **no** | on the mkI a custom delay and a custom reverb are loaded into the same runtime: the SDK notes that when both are enabled only one of them can be a custom effect, and enabling both anyway has been reported to make them malfunction. Pick one, and put a stock effect in the other slot |
 
 So a full house is one oscillator (`noise` or `resonator`), one of the three
@@ -774,7 +781,7 @@ in the Makefile then line up.
 
 `.github/workflows/build.yml` builds all units on every push and uploads them as
 an artifact. Cutting a release is pushing a tag: the same workflow builds the
-units with gcc 5.4 and attaches the eight packages to a release, creating it with
+units with gcc 5.4 and attaches the nine packages to a release, creating it with
 the commit list as its notes if it does not exist yet. A tag with a suffix
 (`v0.2.0-beta`) makes a prerelease, a release published by hand gets its packages
 the same way, and a second run for a tag that already has a release replaces the
