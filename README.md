@@ -580,8 +580,8 @@ for an oscillator, 6 KB for a modulation effect — and fails if one grew past i
 `tools/check_budget.py` prints one line per unit:
 
 ```
-noise       4676 /  32768 bytes of osc    memory  ok    libm: none
-wavefolder  1292 /   6144 bytes of modfx  memory  ok    libm: none
+noise        6680 /  32768 bytes of osc    memory  ok    libm: none
+wavefolder   1292 /   6144 bytes of modfx  memory  ok    libm: none
 ```
 
 The same tool runs `nm` over every unit file and fails if one of them links the
