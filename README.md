@@ -427,7 +427,9 @@ going through it, so digital silence in is exactly digital silence out and the
 block is skipped (the knob ramps still run, so a knob moved over silence lands
 where it should). Both knobs move as 20 ms slopes spread across the samples of
 the block, because the drive is a gain into a curve and a gain that steps
-between parameter messages is a click on anything sustained.
+between parameter messages is a click on anything sustained. It is a small unit
+for a curve: 1332 of the mod slot's 6144 bytes in the gcc 5.4 build, and no
+maths library.
 
 ### barber — delay effect (barberpole phaser)
 
@@ -903,6 +905,7 @@ What each unit file links, from `nm` over the ELFs CI builds:
 | `noise` | `___osc_mcu_hash_veneer`, `___osc_white_veneer` | none |
 | `reso` | none | none |
 | `resonator` | `___osc_mcu_hash_veneer` | none |
+| `wavefolder` | none | none |
 
 The three veneers are the loader's stubs for SDK calls — `osc_white` and
 `osc_mcu_hash` — not library code. Everything else each unit needs, it carries.
