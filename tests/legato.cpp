@@ -40,9 +40,12 @@ static void noteOn(int pitch) {
   _hook_on(&p);
 }
 
-static void noteOff() {
+// The key that comes up is the one that is sounding: a unit that matches the
+// key-up against its held note would ignore a pitch of zero.
+static void noteOff(int pitch) {
   user_osc_param_t p;
   memset(&p, 0, sizeof p);
+  p.pitch = (uint16_t)pitch;
   _hook_off(&p);
 }
 
@@ -117,7 +120,7 @@ int main(int argc, char **argv) {
   const double c4Before = energyAt(3000, 2000, 261.63);
 
   if (split) {
-    noteOff();                               // the key comes up first, and
+    noteOff(60 * 256);                       // the key comes up first, and
     render(240, 60 * 256);                   // 5 ms later the next one arrives
   }
   noteOn(67 * 256);                          // the slur: no key released
@@ -131,6 +134,14 @@ int main(int argc, char **argv) {
   printf("c4_before %.5f\n", c4Before);
   printf("c4_after %.5f\n", energyAt(8000, 2000, 261.63));
   printf("g4_after %.5f\n", energyAt(8000, 2000, 392.0));
-  noteOff();
+
+  // And the slur must not leave the voice stuck: the key that the slur ended on
+  // comes up, and the note has to stop ringing as if no key were down.
+  const float levelSustained = rms(11000, 1000);
+  noteOff(67 * 256);
+  render(2400, 67 * 256);                    // 50 ms with no key down
+  printf("level_sustained %.5f\n", levelSustained);
+  printf("release_ratio %.4f\n",
+         rms(13800, 600) / (levelSustained > 1e-9f ? levelSustained : 1e-9f));
   return 0;
 }

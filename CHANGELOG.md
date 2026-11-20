@@ -19,6 +19,17 @@ golden is regenerated because the attack window falls inside that 20 ms: the
   purpose: a lifted bow and a re-armed noise band are new articulations, and the
   split test shows them behaving that way. `tests/legato.cpp --split` covers the
   case for the resonator.
+- `resonator` 1.12-3 — the split slur retuned a voice that still thought no key
+  was down: the key that started the window path had already been released, and
+  the slur branch never set the held flag back, so the voice released itself and
+  its own key-up was ignored. Both slur paths set it now. The split test could
+  not see this before because its note-off went out with pitch 0, which matches
+  no held note, so the voice was never actually released and the window path was
+  never exercised; with the key-up carrying the note, the old code drops the
+  slurred note to nothing on the spot (level ×0.00, no G4 to measure).
+  `tests/legato.cpp` now plays the key-up after the slur and
+  `tests/legato_check.py` checks that it stops the note (release ratio 0.00 on
+  all three oscillators).
 
 ## a bug in the damper, a trap in the retune, and the tests that were missing
 

@@ -44,6 +44,13 @@ if vals["level_ratio"] < 0.5:
     problems.append("the sound restarted under the slur (level x%.2f)"
                     % vals["level_ratio"])
 
+# The key-up after the slur has to end the note: a voice that was never marked
+# as held again keeps sounding with no key down, which is what the split path
+# used to do.
+if vals["level_sustained"] > 1e-4 and vals["release_ratio"] > 0.05:
+    problems.append("the note did not stop after the key came up "
+                    "(%.1f%% of the level it held)" % (100.0 * vals["release_ratio"]))
+
 for p in problems:
     print("   " + p)
 sys.exit(1 if problems else 0)

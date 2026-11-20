@@ -653,6 +653,11 @@ void OSC_NOTEON(const user_osc_param_t *const params) {
   if (v.held || s.legato_window > 0) {
     s.legato_window = 0;
     v.note_id = note_id;
+    // A slur is a new key down, whichever of the two paths got us here: after
+    // the split one the old key has already been released, so without this the
+    // voice would keep sounding with no key down and ignore its own key-up.
+    v.held = true;
+    v.rel = 1.f;
     s.glide_from_f0 = v.f0;
     s.glide_to_f0 = f0ForNote(note_id, fine, s.tune);
     s.glide_from_note = v.note;
