@@ -3,6 +3,21 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## five units, and nothing else
+
+- The repository holds five units from v0.4.18-beta on: `noise`, `resonator`,
+  `bowed`, `reso` and `wavefolder`. `lpg`, `elements`, `barber`, `irbody` and the
+  delay build of `irbody` are gone from the tree — not deprecated, removed, with
+  their tests, goldens and documentation. They are in the history if they are
+  ever wanted back.
+- What that costs: the delay and reverb slots are the instrument's own effects
+  again, and the MK's "a custom delay and a custom reverb share one runtime"
+  constraint no longer applies to anything here. `packs/live.txt` is the whole
+  build now, so a release is simply what the workflow attaches.
+- The intro of a unit is what makes this possible: every one of the five is
+  either an oscillator or an audio shaper, and none of them needs a knob the mkI
+  does not give its slot.
+
 ## a wavefolder in the mod slot
 
 - `wavefolder` 1.0-0 — a new modulation effect: a five fold wavefolder. A is the
@@ -30,7 +45,7 @@ below where it is used.
 - On the harness's −30 dB source the folder is mostly gain: folding starts where
 the driven signal reaches full scale, so the golden records the ramps and the
 curve and the folds themselves are an instrument-level thing. The unit costs
-14.4 ns a frame in `tools/bench.cpp`, between `elements` and `bowed`.
+14.4 ns a frame in `tools/bench.cpp`, between `bowed` and `reso`.
 
 ## knobs that move instead of jumping
 

@@ -19,7 +19,7 @@ PLATFORM_DIR="$SDK_DIR/platform/nutekt-digital"
 GCC_PATH="${GCC_BIN_PATH:-$SDK_DIR/tools/gcc/gcc-arm-none-eabi-5_4-2016q3/bin}"
 DIST="$ROOT/dist"
 
-ALL_UNITS=(noise resonator bowed lpg reso elements wavefolder barber irbody irbody_delay)
+ALL_UNITS=(noise resonator bowed reso wavefolder)
 
 fetch_sdk() {
   if [ ! -d "$SDK_DIR" ]; then

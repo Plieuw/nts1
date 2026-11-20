@@ -11,12 +11,10 @@ OUT=${OUT:-/tmp/nts1-tests}
 mkdir -p "$OUT"
 
 status=0
-for u in noise resonator bowed lpg reso elements wavefolder barber irbody irbody_delay; do
+for u in noise resonator bowed reso wavefolder; do
   case $u in
-    noise|resonator|bowed)   kind=0 ;;
-    lpg|reso|elements|wavefolder) kind=1 ;;
-    barber|irbody_delay)     kind=2 ;;
-    irbody)                  kind=3 ;;
+    noise|resonator|bowed)     kind=0 ;;
+    reso|wavefolder)           kind=1 ;;
   esac
   "$CXX" -O2 -std=c++11 -o "$OUT/$u" tests/harness.cpp \
     -Itests/host -I"units/$u/src" -I"units/$u/inc" \

@@ -30,20 +30,15 @@ and not ring on under it. `resonator` with A fully open is the test — a bowl o
 gong holds more than half a minute of energy at that setting, so a unit that keeps
 a tail of its own is heard at once as a note that outlives the key.
 
-The two units to watch are `bowed` while a note is held with the bow hard down
-(4 KB of delay memory, and the only one here with a delay loop) and `irbody`
-while the A knob is being turned (a body change runs an 85 ms crossfade from the
-other engine slot).
+The unit to watch is `bowed` while a note is held with the bow hard down: 4 KB
+of delay memory, and the only one here with a delay loop.
 
 ## 2. Does the crossfade and preset switching survive?
 
-* `irbody`: hold a chord, turn A slowly from one end to the other and back. The
-  body should walk, not jump, and the level should stay put (the host fit holds
-  it within 4 dB).
 * `resonator`: change `Model` while a note rings. The voice is re-landed onto the
   new bank; the note should keep its pitch and change object under it.
-* `barber`: turn the rate knob while a chord rings, and stop the LFO by holding
-  it at one end. No zipper, no pitch shift of the dry signal.
+* `reso` and `wavefolder`: turn the knobs under a held note. Both ramp their
+  parameters over 20 ms, so the change should slope rather than step.
 
 ## 3. Are the levels right in the room?
 
@@ -65,18 +60,13 @@ how fast and how deep it feels is a judgement.
 
 ## 5. The effects in context
 
-* `irbody`: does the stereo body survive the mono sum the NTS-1 makes on its own
-  output? It should; the two channels average back to the old level. Play a note
-  and let go: the body must be gone with the note — the unit gates its own output
-  20 ms after the input goes quiet, so a tail that stays is not the unit.
-* `lpg`: the gate should close on the *note*, not on the oscillator's waveform.
-  Play a slow attack and a staccato note.
-* `elements` and `reso`: full wet, and check that a high note does not thin out.
-  On `elements`, turn DEPTH up while a note rings: the ring should follow the
-  knob and then end with the note, not hang under the next one.
-* `barber`: at the highest feedback setting it should still not run away. Turn
-  the notch count (`DEL` held, then the `B` knob) while a chord rings: the
-  character should go from one wide sweep to a dense comb, without a click.
+* `reso`: full wet, and check that a high note does not thin out. Turn DEPTH up
+  while a note rings: the ring should follow the knob and then end with the note,
+  not hang under the next one.
+* `wavefolder`: a held note through it should get brighter and more complex as
+  FOLD goes up, at about the same level (the host fit is within 1 dB of the dry
+  signal on a full scale pluck). A single coil-like buzz at the top is the
+  five-fold cap doing its job; a drop in level is not.
 
 ## What to write down
 

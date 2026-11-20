@@ -31,39 +31,25 @@ envelope away from its closest neighbour (4.3 at the closest, median 9.4), so a
 move of the model knob changes the object and not just its brightness. The numbering moved with it: this is the
 first version where model 5 is not the same instrument it used to be.# NTS-1 units
 
-Eight custom units for the **KORG Nu:Tekt NTS-1 (mkI)**, built with the
-[logue SDK](https://github.com/korginc/logue-sdk) v1.1-0. Two oscillators, four
-modulation effects, an endless barberpole phaser in the delay slot and a body and
-space model in the reverb slot — a unit for every user slot the instrument has.
+Five custom units for the **KORG Nu:Tekt NTS-1 (mkI)**, built with the
+[logue SDK](https://github.com/korginc/logue-sdk) v1.1-0: three oscillators and
+two modulation effects. The delay and reverb slots stay on the instrument's own
+effects; everything here either makes the sound or shapes it.
 
 | Unit | Slot | What it does | File |
 | --- | --- | --- | --- |
 | `noise` | OSC | Eight noise algorithms, from white to tuned resonance | `noise.ntkdigunit` |
 | `resonator` | OSC | 17 model modal resonator, played from the keyboard | `resonator.ntkdigunit` |
 | `bowed` | OSC | Bowed string, sustains while the key is down | `bowed.ntkdigunit` |
-| `lpg` | MOD | Vactrol style low pass gate driven by an envelope follower | `lpg.ntkdigunit` |
 | `reso` | MOD | Twelve mode resonator with beating pairs, Rings in spirit | `reso.ntkdigunit` |
-| `elements` | MOD | Geometry morphing resonator: string, membrane, plate, bell | `elements.ntkdigunit` |
 | `wavefolder` | MOD | Five fold wavefolder, triangle to sine curve | `wavefolder.ntkdigunit` |
-| `barber` | DELAY | Barberpole phaser that rises or falls forever | `barber.ntkdigunit` |
-| `irbody` | REVERB | Instrument bodies — soundbox, tube, shell — played as filters | `irbody.ntkdigunit` |
-| `irbody` | DELAY | The same body model, built for the delay slot | `irbody_delay.ntkdigunit` |
 
-The NTS-1 has one slot per type, so `noise` and `resonator` are alternatives
-for the oscillator slot, and `lpg`, `reso`, `elements` and `wavefolder` are
-alternatives for the modulation slot. `barber` and `irbody` are alternatives too, for a
-reason that is easy to miss: on the mkI a custom **delay** and a custom
-**reverb** are loaded into the same runtime, so only one of the two can be a
-custom effect at a time (see [Stacking the units](#stacking-the-units)).
-
-That is why `irbody` ships twice: `irbody_delay.ntkdigunit` is the same DSP
-built as a delay unit, so the body can sit in DELAY and leave the reverb slot on
-a stock reverb. It is the only way to have a body and a reverb at the same time.
-Both files come from one source in `units/irbody/src`, so they cannot drift.
-
-Note that there is no user slot for an envelope generator on the NTS-1: the MOD
-slot only accepts (audio) modulation effects. `lpg` is the way to get an
-EG-like behaviour out of that slot.
+The NTS-1 has one slot per type, so `noise`, `resonator` and `bowed` are
+alternatives for the oscillator slot, and `reso` and `wavefolder` are
+alternatives for the modulation slot. That is the whole repository: three
+oscillators and two shapers. There is no user slot for an envelope generator on
+the mkI — the MOD slot only accepts audio modulation effects — and the delay and
+reverb slots are left to the instrument's own effects.
 
 ### Where each unit sits
 
@@ -76,11 +62,8 @@ where that chain does the most for it.
 | OSC | — | `noise` | the only slot that makes sound, and it needs no note to do it |
 | OSC | — | `resonator` | the only slot that is handed the note and sits inside the amp envelope, which is what makes a struck object playable |
 | OSC | — | `bowed` | the only slot that is handed the note and keeps sounding for as long as the key is down; nothing later in the chain can make a struck sound sustain |
-| MOD | amp/EG | `lpg` | first slot after the amp envelope, so the follower hears the shape of the note, which is exactly what a vactrol gate wants. The NTS-1 has no user filter or EG slot |
-| MOD | amp/EG | `reso`, `elements` | they turn the oscillator into an instrument, so everything time based should come after them |
+| MOD | amp/EG | `reso` | it turns the oscillator into an instrument, so everything time based should come after it |
 | MOD | amp/EG | `wavefolder` | it folds what the amp envelope hands it, so a plucked note opens up as it decays and a held one sits at a steady fold: the shaper wants the shaped signal, and that is this slot |
-| DELAY | mod | `barber` | a phaser belongs before the reverb, and it needs the shift-depth parameter that only a delay or reverb unit gets — that is where the notch count lives; a modulation effect has no such parameter |
-| REVERB | delay | `irbody` | a space belongs at the end of the chain, and a reverb unit gets the same 12 KB of code, 2.4 MB of SDRAM and shift-depth mix as a delay unit |
 
 One consequence of that chain is worth saying out loud, because it decides how
 the units behave: only the OSC slot is released at all. When a key comes up, the
@@ -125,11 +108,11 @@ the attack stand out.
 
 | `Trans` | Shape | Sounds like | Pairs with |
 | --- | --- | --- | --- |
-| 0 % | mallet | soft head, no high end, 14 ms thump | `elements` membrane/plate, `irbody` piano and guitar |
-| 25 % | stick | hard full-band click, gone in 3 ms | marimba, `irbody` wood and steel |
-| 50 % | pluck | bright edge over a woody body, 28 ms | `elements` string end, `irbody` violin and cello |
-| 75 % | ping | narrow ring tuned to the note, 140 ms | `elements` bell end, `irbody` plate |
-| 100 % | knock | knuckle on wood, 5 kHz and down, slow | `irbody` room, or a low thump under anything |
+| 0 % | mallet | soft head, no high end, 14 ms thump | `resonator` membrane and bowl |
+| 25 % | stick | hard full-band click, gone in 3 ms | `resonator` marimba, `reso` at a short ring |
+| 50 % | pluck | bright edge over a woody body, 28 ms | `resonator` piano and guitar |
+| 75 % | ping | narrow ring tuned to the note, 140 ms | `reso` with a long ring, `bowed` |
+| 100 % | knock | knuckle on wood, 5 kHz and down, slow | `wavefolder` after it, or a low thump under anything |
 
 The five shapes were measured to land at the same attack level, and the level
 between them is trimmed against a measured curve, so the sweep stays within about
@@ -149,9 +132,9 @@ second, so a fast LFO walks the filters instead of stepping them block by block.
 
 ### resonator — oscillator (multi model modal resonator)
 
-`elements` is the same engine with the pitch set by hand, because a modulation
-effect gets no note. Here the note is available, so this one is played from the
-keyboard: a strike goes into a bank of modes and the amp envelope decides how
+`reso` is the same kind of engine with the pitch set by hand, because a
+modulation effect gets no note. Here the note is available, so this one is played
+from the keyboard: a strike goes into a bank of modes and the amp envelope decides how
 long you hear it ring. A key that arrives while the previous one is still down
 is a slur and not a second strike: the bank is retuned along a straight line to
 the new note in 32 ms, keeping its phase, which is a body being driven at a new
@@ -334,20 +317,6 @@ note-on to 0.4 us, but it changes the attack by 6 dB: with the rest of the line
 holding an older note instead of noise, the first frames come out differently. So
 the whole line is seeded, and the loop keeps its attack.
 
-### lpg — modulation effect (low pass gate)
-
-A vactrol style gate: whatever arrives at the MOD slot opens both a VCA and a
-low pass filter, and lets them fall back slowly and non-linearly. Play short
-notes and it plucks; hold a chord and it breathes.
-
-| Control | Function |
-| --- | --- |
-| A (TIME) | release time, 4 ms .. 2 s |
-| B (DEPTH) | how far the gate closes (0 nearly open, 1 full gate) |
-
-The follower is normalised with a slow peak tracker, so quiet and loud sources
-open the gate the same way.
-
 ### reso — modulation effect (modal resonator)
 
 Twelve tuned resonators in near pairs, so the modes beat against each other.
@@ -358,43 +327,6 @@ feed it sustained sound and it turns into a tuned drone.
 | --- | --- |
 | A (TIME) | fundamental, 40 Hz .. 2 kHz |
 | B (DEPTH) | ring time, 0.1 s .. 5 s |
-
-### elements — modulation effect (geometry morphing resonator)
-
-Where `reso` keeps one fixed mode set, this one moves the modes themselves. The
-B-knob morphs the geometry: a stiff string first (harmonic series with the
-inharmonic stretch a real string has), then the Bessel ratios of a circular
-membrane, then the modes of a flat plate, and finally the inharmonic series of a
-bell. Decay, damping and the colour of the exciter follow along, so a string is
-short and bright and a bell rings long and dark — because that is what those
-objects do.
-
-It is an independent implementation inspired by the resonators of Mutable
-Instruments Elements, not a port: a modulation effect on the NTS-1 gets two
-knobs and no note information, so the pitch is set by hand here.
-
-Four points on the B knob are the four objects themselves: 0, 341, 682 and 1023.
-Within 3% of the way between two of them — ten counts — the knob plays that model
-exactly, so the membrane can be found by hand and is exactly the membrane. Past
-that band the morph is picked up again over the next ten counts by a smoothstep,
-which leaves the band and re-enters the morph with zero slope, so the level never
-steps: over the whole B sweep with one plucked note at 220 Hz the largest change
-between neighbouring knob counts is 3.6 dB, against 7.6 dB for a hard edge — and
-the morph alone, with no band at all, reaches 2.5 dB per count where a mode sits
-on the note. Everything beyond the return — 900 of the 1024 positions — is
-bit-identical to that plain morph.
-
-The instrument is mono, so this unit renders one bank. The slot is handed a main
-and a sub buffer, but an instrument with one oscillator has one signal, and the
-SDK says a platform without a sub timbre may ignore the sub buffers; a host that
-still arrives with a separate sub output gets the same samples there. The bank
-runs two samples per step, so each mode's coefficients and its two states are
-used for a pair instead of being read and written once per sample.
-
-| Control | Function |
-| --- | --- |
-| A (TIME) | fundamental, 40 Hz .. 2 kHz |
-| B (DEPTH) | geometry: string → membrane → plate → bell |
 
 ### wavefolder — modulation effect (five fold wavefolder)
 
@@ -442,172 +374,6 @@ between parameter messages is a click on anything sustained. It is a small unit
 for a curve: 1292 of the mod slot's 6144 bytes in the gcc 5.4 build, and no
 maths library.
 
-### barber — delay effect (barberpole phaser)
-
-One to sixteen all-pass sections, eight notches in the audible range at the top
-setting, and a second cascade half a cycle out of phase takes over where the first
-wraps around, crossfaded with a raised cosine. The result never jumps, so it
-rises (or falls) forever. Feedback sharpens the notches into the classic jet
-sound.
-
-The sweep covers 40 Hz .. 6.4 kHz of all-pass corner, which puts the lowest notch
-at a tenth of the corner and the highest at 3.7 times it: every notch travels
-7.3 octaves on its way up, 44% more than the five it used to cross. Sixteen
-sections and a wider corner cost 42% of the unit's host time (33.8 → 47.9
-ns/frame), which is still among the cheapest things in this collection.
-
-| Control | Function |
-| --- | --- |
-| A (TIME) | rate and direction: left of centre falls, right of centre rises, further out is faster (0.02 .. 10 Hz) |
-| B (DEPTH) | feedback / resonance |
-| DEL + B | number of notches, one to sixteen |
-
-Each cascade is mixed with the dry signal at the middle, which is where its
-notches are deepest, and the two are then crossfaded; that sum is the output.
-Mixing it with the dry signal a second time used to put a 6 dB ceiling on the
-notches — a quarter of the all-pass against three quarters of the dry — and that
-ceiling, not the sweep, was most of why this slot read as a phase drift rather
-than a barberpole. The mix is fixed because the shifted DEPTH control is needed
-for the notch count: adding or removing a section starts or empties that
-section's state, so the count can be turned while it runs without a click.
-
-**The sweep had a sign error until 1.5-0.** The first-order allpass here is
-`y = x1 + c(x - y1)`, whose pole sits at `-c`, so its corner is at `fc` only when
-`c` is negative and close to −1. The coefficient was `(1 - t)/(1 + t)`, which puts
-the pole at −1 and mirrors the corner to `fs/2 - fc`: every notch of the cascade
-sat in the top octave. Measured across 100 Hz .. 4 kHz the response was flat to
-within 0.1 dB, and a steady tone moved by 0.0, 0.0 and 0.2 dB at 500, 977 and
-2000 Hz — there was no comb in the band to move. `(t - 1)/(t + 1)` is the same
-sweep with the pole where it belongs: six notches between 100 Hz and 4 kHz (172,
-532, 938, 1436, 2126 and 3238 Hz, 20 to 34 dB deep at a still phase), and a steady
-tone now swings 50 to 59 dB as they pass. That, and not the depth of the sweep,
-is why this slot read as a phase drift.
-
-At the middle of the knobs the unit is −0.11 dB against the dry signal, measured
-with a plucked note.
-
-### irbody — reverb effect (instrument bodies)
-
-The wet signal is stereo now. Two points on a corpus do not hear the same
-thing: the tail is read from the two delay lines a few samples apart and goes
-through an allpass on the difference, and the modes themselves take a quarter
-of a millisecond detour on the right. How wide that is depends on the
-body — a wood block is wider than a drum — and the two average back to the level
-the unit had before. The harness measures the correlation on the 21 ms right
-after the input stops, `corr_hi` the same window above 2 kHz.
-
-The tail is one network, not one per engine. Every body here is the guitar's
-size, so the two delay lines are the same length whichever preset is chosen, and
-both engines in a crossfade can stand in the same set of them: a body change
-costs a second mode bank instead of a second tail, and the network's settings
-are walked from one body's numbers to the other's once a block while the 85 ms
-fade runs. That is the peak the instrument was paying for while a knob turned —
-715 → 654 cycles a frame standing still and 1327 → 1031 with a crossfade
-running, counted off the image. Standing still the unit is sample for sample
-what it was; while the knob moves the two builds differ by -19 dB (correlation
-0.994), because one tail carries both bodies where two used to be summed.
-
-It is also what took the last buffer out of SDRAM: the comb lines are 2.6 KB and
-they fit in the slot's 12 KB now that there is one set instead of two, so a
-sample no longer waits for the external memory on the hottest path in the unit.
-
-The A knob is a continuum. It still picks the family, but between two bodies the
-damping, brightness, level and size glide from one into the next, so a violin
-can be walked into a cello instead of jumping. The mode ratios stay with the
-nearest body, because half of one body's partials with half of another's is
-neither. Levels are fitted per body (measured on the host, within 4 dB over the
-whole travel) so turning the knob does not change how loud you are.
-
-Each body also holds exactly for 3% of the knob on either side of it (±31 counts)
-instead of only inside the quarter step it lands on (±18), so the glide into the
-next body has not started yet when you are near one. Over the whole A sweep that
-band moves 174 of 1024 positions, by at most 1.65 dB.
-
-### irbody — reverb effect (instrument bodies)
-
-Puts the synth inside a body: a violin or cello soundbox, a piano soundboard, a
-guitar, a marimba bar, a metal plate, a clarinet bore, a drum shell, and a hollow
-wooden box. The bodies are models rather than samples, and the model is played
-instead of convolved: a bank of resonances for the object's own modes and a
-network of delay lines for the diffuse part. It is a reverb effect, so it runs last: whatever the modulation
-units and the delay have made is what it puts in the body.
-
-The models are physical: the violin, cello and guitar use the air and wood
-resonances of the real instruments (A0, B1-, B1+ and the bridge hill), the wood
-preset the free-free bar series of a marimba bar, the steel preset a plate-like
-inharmonic series with an even, long decay, the clarinet the odd harmonics of a
-closed-open tube with the damping of a wooden bore, and the drum the few modes of
-a cylindrical shell. On top of the modes each object has a diffuse tail whose
-high frequencies die away faster than its low ones. All of that lives in
-[`units/irbody/src/ir_model.h`](units/irbody/src/ir_model.h); the same header
-still writes the responses out as WAV files in [`ir/`](ir) through
-[`tools/make_irs.cpp`](tools/make_irs.cpp), and those files are what the unit's
-levels were measured against.
-
-No body is larger than a guitar. The model describes a piano soundboard and a
-steel plate as bigger things, and a knob that walks all of them had no business
-putting a note in a room: the comb scale and both decay constants are brought
-back to the guitar's, so every preset is a body you could hold, and a piano or a
-plate is that body's colour rather than a hall. Two delay lines instead of four,
-no allpass on the side signal and none on the tail, which is what a small object
-needs and what the slot can afford: the two lines are read four times between
-them where the old network read nine.
-
-Only the comb line that the tail stands in lives in SDRAM, 5 KB of it. The two
-engines and the short delay lines are read and written once per sample, so they
-sit in SRAM instead: 2.3 KB of it, with the code, out of the 12 KB the slot has.
-That is a placement, not a different sound — on the host the cost is the same
-before and after, and it is on the instrument that a sample would otherwise wait
-on SDRAM for its own state.
-
-A body ends when the sound does: the unit's own tail is 8 to 22 ms, so it is the
-one place here where a state left in the slot could be heard after the note. It
-cannot be: 20 ms of true digital silence closes the output over 10 ms and opens
-it the same way. A held note, a release, and a delay tail in front of it all
-keep the gate open, because the input is only exactly zero once the amp EG of the
-synth has already taken the note down.
-
-| Control | Function |
-| --- | --- |
-| A (TIME) | body: violin, cello, piano, guitar, wood, steel, clarinet, drum, box |
-| B (DEPTH) | damping of the wet signal, dark .. open |
-| DEL + B | dry/wet |
-
-The first version of this unit convolved the sound with those responses: 4096
-taps in sixteen frequency domain partitions, a 512 point FFT every 256 samples,
-603 KB of SDRAM for the spectra and 5.3 ms of latency. It worked and it was, by
-a wide margin, the most expensive thing here. The network is the same model
-without the finite response in it: eleven resonators at most, two delay lines in
-a feedback delay network, three allpasses, one damping low pass — 5 KB of SDRAM
-and no FFT, measured at 28 ns/frame against 47 for the convolution.
-
-The one audible difference is the sustain. An 85 ms response stops 85 ms after
-the sound that fed it; a network keeps ringing while it is fed, so a held note
-now sits in the body instead of leaving it after a few frames. That is what a
-body does, and it is the one place where this is not only cheaper but better.
-
-The levels of the bank and the tail per body are fitted, band by band, to the
-responses the old version convolved with, and the result is within 1.3 to 2.5 dB
-per third-octave band (weighted by level) for six of the eight modal bodies, 4 dB
-for the clarinet and 7 dB for the marimba bar, whose modes sit high and leave the
-low end to the tail. Fed a musical signal at full wet, those eight land within
-0.4 dB of where they were; the box is new and was levelled against them.
-
-The last body is the odd one: `box` has no resonances at all. A soundbox is a
-cavity, and a cavity's character is the train of reflections between its walls,
-so the unit plays six delay taps — 0.79, 1.17, 1.75, 2.33, 2.90 and 3.60 ms,
-alternating in sign — off a 5 ms history of the input, over the same damped tail
-every body stands in. The taps are the walls and the tail is the wood. Its
-reference response is 40 dB down at 17 ms, where the modal bodies take 35 to
-80 ms, and with the knobs at the middle it sits at −1.6 dB against the dry note,
-between the drum at −1.2 and the steel at +1.1. Walking the A knob from the drum
-into the box changes the level by at most 0.7 dB between neighbouring quarter
-steps, so the extra body costs nothing at the seam.
-
-A switch crossfades between two engines over 85 ms, so turning the knob cannot
-click. Everything is set up in the parameter callback: turning the knob builds
-one engine, never while a sample is waiting.
-
 ## Stacking the units
 
 The NTS-1 chain is oscillator → filter → amp/EG → modulation → delay → reverb,
@@ -619,38 +385,28 @@ What the mkI *does* constrain is which slots can be full at the same time:
 
 | Combination | Works | Why |
 | --- | --- | --- |
-| any one of `lpg`, `reso`, `elements`, `wavefolder` | yes | there is one MOD slot, so they are alternatives |
-| `noise` or `resonator` with any of them | yes | the oscillator and the effect slots are independent |
-| `barber` in DELAY with a stock reverb | yes | a stock delay and a stock reverb do not collide |
-| `irbody` in REVERB with a stock delay | yes | same |
-| `irbody` (delay build) in DELAY with a stock reverb | yes | the body is the custom effect, the reverb stays stock |
-| `barber` **and** `irbody` together | **no** | on the mkI a custom delay and a custom reverb are loaded into the same runtime: the SDK notes that when both are enabled only one of them can be a custom effect, and enabling both anyway has been reported to make them malfunction. Pick one, and put a stock effect in the other slot |
+| any one of `reso`, `wavefolder` | yes | there is one MOD slot, so they are alternatives |
+| `noise`, `resonator` or `bowed` with either of them | yes | the oscillator and the effect slots are independent |
 
-So a full house is one oscillator (`noise` or `resonator`), one of the three
-modulators, and one of `barber` or `irbody` — with the remaining effect slot on a
-stock type.
+So a full house here is one of the three oscillators and one of the two shapers,
+with the delay and reverb slots on the instrument's own effects.
 
 ### What the numbers mean in a frame
 
 One block is 64 frames at 48 kHz: 1.333 ms, and the bench strikes a note every
 half second so an oscillator is timed while it is sounding and not after it has
-decayed. The most expensive unit here, `barber`, asks for 48 ns of host time per
-frame, which is 3.1 µs of a 1333 µs block, or 0.23%. Then `irbody` 28 ns/frame,
-`reso` 22, `lpg` 21, `resonator` 20, `elements` 16, `wavefolder` 14, `bowed` 12
-and `noise` 9. The
+decayed. The most expensive unit here, `reso`, asks for 22 ns of host time per
+frame, which is 1.4 µs of a 1333 µs block, or 0.11%. Then `resonator` 20
+ns/frame, `wavefolder` 15, `bowed` 12 and `noise` 9. The
 Cortex-M4F in the
 NTS-1 runs at 168 MHz and has a single precision
 FPU, so the same code there costs several times what it costs on a desktop core;
 even at eight times the host, the heaviest unit is around 2% of a block.
 
-Which is why nothing here is optimised for speed at the cost of the sound: the
-sixteen allpass stages of `barber` are what make its sweep a sweep, and cutting
-them would buy idle cycles nothing needs. The one pass that took speed for free
-is `irbody` 1.13-0: the box's taps only run while a box is playing, the two
-per-sample helpers are inlined, and the output is byte for byte what it was —
-40.2 to 27.8 ns a frame, with the goldens unmoved. The one place the budget is real is
-memory in the oscillator slot: `bowed` keeps one delay loop of 1024 samples and
-`resonator` one bank of modes, 4 KB and 0.4 KB of the 32 KB they get.
+Which is why nothing here is optimised for speed at the cost of the sound. The
+one place the budget is real is memory in the oscillator slot: `bowed` keeps one
+delay loop of 1024 samples and `resonator` one bank of modes, 4 KB and 0.4 KB of
+the 32 KB they get.
 
 ### Levels
 
@@ -671,14 +427,11 @@ instead of the forty eight simultaneous tones the goldens use.
   RMS (0.69) is above a full-scale sine and why raising its trim there only
   added distortion.
 * **An effect leaves the level of a dry note where it found it**, at the middle
-  of its knobs. With one plucked note: `lpg` +0.4 dB, `reso` +1.1, `barber`
-  +0.8, `elements` −0.0 and `irbody` +0.8. `wavefolder` is the exception, and on
-  purpose: what a waveshaper hands on depends on how hard it is driven, so it is
-  fitted where a patch actually sits — a pluck peaking at 0.9 reads −0.2 dB at
-  the middle of its knobs — and the same settings read +3.6 dB on a quieter
-  pluck, which peaks at 0.33. `elements` was 9.8 dB down and
-  `irbody` 17.3 dB up — the body sat on top of the note and clipped it on every
-  pluck, where a reverb should sit behind it.
+  of its knobs. With one plucked note `reso` reads +1.1 dB. `wavefolder` is the
+  exception, and on purpose: what a waveshaper hands on depends on how hard it is
+  driven, so it is fitted where a patch actually sits — a pluck peaking at 0.9
+  reads −0.2 dB at the middle of its knobs — and the same settings read +3.6 dB
+  on a quieter pluck, which peaks at 0.33.
 
 The `waves` demo itself does not build against the host stand-in (its `dsp`
 headers want the ARM SDK's own float helpers), so the reference is read from its
@@ -697,17 +450,16 @@ without having to think about it:
   and the latched values are applied, so an early program change cannot leave a
   unit half set up.
 * **Nothing but audio in the audio callback.** Everything expensive happens in
-  the init callback: `irbody` builds its filter coefficients there, `reso` and
-  `elements` build theirs. Switching a program never builds
-  anything while sound is running.
+  the init callback: `reso` builds its filter coefficients there. Switching a
+  program never builds anything while sound is running.
 * **Suspend and resume leave silence.** After a resume nothing comes out of
   stale state (measured: 0.0000 from all of the effect units). A unit that is suspended loses
   its tail rather than replaying it later.
 * **No non-finite samples.** Each unit was hammered with 20 000 random
   parameter jumps across the full range of every control, mid-stream: no NaN and
-  no infinity in the output. `reso` and `elements` guard their mode banks — if a
-  jump moves the modes so far under a ringing bank that it starts to run away,
-  the bank is dropped instead of passing a NaN down the chain.
+  no infinity in the output. `reso` guards its mode bank — if a jump moves the
+  modes so far under a ringing bank that it starts to run away, the bank is
+  dropped instead of passing a NaN down the chain.
 * **Bounded output.** Every unit ends in a soft clip, so a slot cannot hand the next
   one more than full scale.
 * **No maths library.** A single call into libm is enough for the linker to pull
@@ -721,71 +473,33 @@ without having to think about it:
   the -16 dB case). The harness prints both figures (`tail_db`, `tail_db_top`)
   for the effects — the level over the last second of a ten second render,
   against the level while the input was there — and `tests/run.sh` fails above
-  those limits. A ring that never ends measures at or above the note itself:
-  `elements` reached a 179 s ring time at the bell end and measured +1 dB there
-  before this change. Its bell end is 2 s now, and -36 dB at the top.
+  those limits.
 
 Measured with `tools/bench.cpp`: the same workload in every unit, nanoseconds per
-audio frame on this host (x86, gcc 10.3, 20 s of audio, minimum of three passes).
-The previous build is run alternately in the same session, so a busy machine
-cannot flatter either column. One 64 frame block at 48 kHz is 1.333 ms, and these
-are a comparison — between units and against the version before this one — not an
-M4 prediction: the gap is about two orders of magnitude, see `bowed` above. The
-one figure that is not from this host is `bowed`'s 777 cycles per frame, counted
-on the M4 from its own image.
+audio frame on this host (x86, gcc 10.3, 20 s of audio, minimum of three
+passes). One 64 frame block at 48 kHz is 1.333 ms, and these are a comparison
+between units, not an M4 prediction: the gap is about two orders of magnitude.
+The one figure that is not from this host is `bowed`'s 777 cycles per frame,
+counted on the M4 from its own image.
 
-**Busy** is a note held (a spread of tones for the effects); **idle** is the same
-unit with nothing to do — no key down, or digital silence in, which is what the
-effect slots are handed between notes.
+**Busy** is a note held (a spread of tones for the effects); **idle** (`--idle`)
+is the same unit with nothing to do — no key down, or digital silence in, which
+is what the effect slots are handed between notes.
 
 | Unit | Text + data | SRAM | Busy | Idle |
 | --- | --- | --- | --- | --- |
-| `noise` | 5.8 KB | 0.4 KB | 8.6 → 8.9 ns/frame (unchanged) | 8.4 → 8.4 ns |
-| `resonator` | 5.0 KB | 0.4 KB | 31.9 → 27.0 ns (**-15%**) | 1.4 → 0.4 ns (**-69%**) |
-| `bowed` | 2.7 KB | 4.1 KB | 14.1 → 10.2 ns (**-27%**) | 7.3 → 1.6 ns (**-78%**) |
-| `lpg` | 1.7 KB | 0.1 KB | 21.0 → 21.0 ns | 21.1 → 2.1 ns (**-90%**) |
-| `reso` | 2.1 KB | 0.4 KB | 28.6 → 22.3 ns (**-22%**) | 29.5 → 2.6 ns (**-91%**) |
-| `elements` | 2.6 KB | 0.4 KB | 39.2 → 16.3 ns (**-58%**) | 39.9 → 1.6 ns (**-96%**) |
-| `barber` | 2.4 KB | 0.6 KB | 33.8 → 47.9 ns (16 sections) | 34.0 → 2.4 ns (**-93%**) |
-| `irbody` | 5.3 KB | 4.0 KB | 42.2 → 32.3 ns (**-23%**) | 46.5 → 2.1 ns (**-95%**) |
+| `noise` | 5.8 KB | 0.4 KB | 8.9 ns/frame | 8.4 ns |
+| `resonator` | 5.0 KB | 0.4 KB | 20 ns/frame | 0.4 ns |
+| `bowed` | 2.7 KB | 4.1 KB | 12 ns/frame | 1.6 ns |
+| `reso` | 2.1 KB | 0.4 KB | 22 ns/frame | 2.6 ns |
+| `wavefolder` | 1.3 KB | none | 15 ns/frame | 2.8 ns |
 
-Summed over one slot of each type — `bowed`, `elements`, `barber` and `irbody`,
-which is a full house on the mkI — that is 129 → 93 ns/frame while playing, and
-128 → 7.7 ns/frame with the instrument idle. Which slot types run at once is the
-difference the instrument hears: four slots together used to do the same work
-whether or not a note was sounding, and between notes now almost none.
-
-What was done, and why the sound does not move:
-
-* `reso` computes both timbres in one pass over the modes. The coefficients are
-  shared by the two channels and were loaded twice; they are loaded once now,
-  with the same three terms per channel in the same order.
-* `elements` renders one bank instead of two, because the instrument has one
-  oscillator, and steps it two samples at a time: a mode's coefficients and its
-  two states are used for the pair, so the state is read and written once where
-  it was read and written twice. Its ratio table is gone too — the four
-  geometries are worked out when the knob moves rather than kept as four times
-  sixteen floats.
-* `resonator` skips the per-mode drive coefficient once the strike is over — a
-  few milliseconds into the note — because that term is exactly zero after it, so
-  the two paths agree sample for sample.
-* Every effect slot now skips a block whose input is digital silence when its own
-  state has run down. That is not an approximation: every term of the sum is
-  zero, so the output is written and the DSP is not run. It is where most of the
-  saving is, because the slots used to run flat out between notes. `barber` and
-  `irbody` also stop advancing their own state there (the phaser's LFO phase, the
-  bodies), which by then is 20 ms behind and below -180 dB.
-* `barber` steps its two cascades in one pass over the stages: the same
-  arithmetic, but two independent chains for the core to interleave instead of
-  one at a time, and half the loop bookkeeping. `lpg` gets the same per-channel
-  skip as the other effects.
-* The state guards that keep a bank off the FPU's denormal path now trigger at
-  -180 dB instead of -300 dB, which is what lets an idle channel be skipped
-  rather than merely cleared.
-* `noise` is unchanged and was the cheap one already: a noise source has to
-  render every frame. `bowed` and `resonator` are one voice instead of four,
-  because the NTS-1 plays one note at a time: no voice loop, no voice
-  allocation, and an idle note cannot cost anything when it does not exist.
+An effect slot is handed digital silence between notes, and every unit here skips
+a block whose input is all zeroes once its own state has run down: that is not an
+approximation, every term of the sum is zero. It is where most of an effect's
+cost goes — `reso` is 22 ns a frame with a note and 2.6 without one — and
+`wavefolder`, which keeps no state at all, still writes the zeroes at 2.8 ns
+rather than running the curve over them.
 
 ## Installing on the NTS-1
 
@@ -831,15 +545,8 @@ how `bowed`'s 777 cycles were counted.
 
 ```sh
 ./scripts/build.sh                # everything -> dist/
-./scripts/build.sh noise lpg      # just these
+./scripts/build.sh noise reso     # just these
 ./scripts/build.sh --setup        # only fetch the SDK and toolchain
-```
-
-Regenerating the impulse response WAV files (not needed to build, only when you
-change the models in `units/irbody/src/ir_model.h`):
-
-```sh
-g++ -O2 tools/make_irs.cpp -o /tmp/make_irs && /tmp/make_irs ir
 ```
 
 The script clones the logue SDK into `.sdk/` and downloads the gcc 5.4 toolchain
@@ -855,16 +562,13 @@ Prefer the SDK's own layout? Copy a `units/<name>` directory into
 in the Makefile then line up.
 
 A named set is a file in `packs/`, one unit per line, and builds with
-`./scripts/build.sh --pack rig`: the same five files every time instead of a
-hand-picked list, which is what a release for one rig needs.
+`./scripts/build.sh --pack live`: the five files the instrument gets, every
+time, instead of a hand-picked list.
 
 `.github/workflows/build.yml` builds all units on every push and uploads them as
 an artifact. Cutting a release is pushing a tag: the same workflow builds the
-units with gcc 5.4 and attaches the ten packages to a release, creating it with
-the commit list as its notes if it does not exist yet. That is every unit in the
-build; a release is then trimmed to the set in `packs/live.txt` by hand, so the
-pack is what the instrument actually gets and the build is what proves it all
-still compiles. A tag with a suffix
+units with gcc 5.4 and attaches the five packages to a release, creating it with
+the commit list as its notes if it does not exist yet. A tag with a suffix
 (`v0.2.0-beta`) makes a prerelease, a release published by hand gets its packages
 the same way, and a second run for a tag that already has a release replaces the
 packages on it rather than making another.
@@ -872,56 +576,30 @@ packages on it rather than making another.
 ## Memory budgets
 
 The build checks that every unit still fits the memory its slot gives it — 32 KB
-for an oscillator, 6 KB for a modulation effect, 12 KB for a delay or reverb
-unit, with the reverb's SDRAM counted separately — and fails if one grew past
-it. `tools/check_budget.py` prints the numbers:
+for an oscillator, 6 KB for a modulation effect — and fails if one grew past it.
+`tools/check_budget.py` prints one line per unit:
 
 ```
-irbody       4980 /  12288 bytes of revfx memory  ok
-bowed       19524 /  32768 bytes of osc memory  ok
+noise       4676 /  32768 bytes of osc    memory  ok    libm: none
+wavefolder  1292 /   6144 bytes of modfx  memory  ok    libm: none
 ```
-
-That check is not ceremony: `irbody` came within 3 KB of its 12 KB while it was
-getting its stereo paths, and what did not fit was libm, not the reverb.
 
 The same tool runs `nm` over every unit file and fails if one of them links the
-maths library:
-
-```
-barber       1924 /  12288 bytes of delfx  memory  ok    libm: none
-irbody       4980 /  12288 bytes of revfx  memory  ok    libm: none
-```
-
-Both snippets are what CI prints, which is the gcc 5.4 the instrument is built
-with; the newer gcc in a sandbox builds several units smaller, so the gate is the
-stricter of the two. `irbody` used to be the tight one — 632 bytes of headroom
-left, nearly all of it spent on the maths library — and taking that out is what
-gave it back 6.6 KB.
+maths library. That is the quiet sort of regression: one `cosf` in a loop costs a
+few hundred cycles per sample, and it drags newlib's reentrancy struct into a
+slot that has 6 or 32 KB in total. `bowed` lost 4 KB of code and half its cost to
+that lesson, and nothing here has needed an allowance since: the polynomials in
+`units/common/arcmath.h` cover the exponentials, square roots and sines.
 
 `tools/cycles.py` is the other half of that: it prices a range of any unit's
 disassembly with the Cortex-M4's instruction timings, which is where `bowed`'s
 cycles come from. The ELFs are in the CI artifact for exactly that.
 
-One `cosf` in a loop is not a small thing here. It costs a few hundred cycles per
-sample, it pulls newlib's sine kernels in (4 KB of the oscillator slot's 32 KB,
-which is what `bowed` was carrying until it stopped calling it per sample), and
-it brings the reentrancy struct along, which is a kilobyte of RAM in a slot that
-has 6 or 12. There are no exceptions left: `irbody` was the last unit with an
-allowance, for two calls — `powf` for a level in decibels and `sqrtf` for the
-midpoint between two bodies — and both are polynomials in
-`units/common/arcmath.h` now. `ir_model.h`'s renderer, which is written in
-`sinf`/`cosf`/`expf` for the sake of the WAV generator, is behind
-`IRMODEL_RENDER` and is not compiled into the unit at all.
-
 What each unit file links, from `nm` over the ELFs CI builds:
 
 | Unit | Symbols from outside the unit | Undefined |
 | --- | --- | --- |
-| `barber` | none | none |
 | `bowed` | none | none |
-| `elements` | none | none |
-| `irbody` | none | none |
-| `lpg` | none | none |
 | `noise` | `___osc_mcu_hash_veneer`, `___osc_white_veneer` | none |
 | `reso` | none | none |
 | `resonator` | `___osc_mcu_hash_veneer` | none |
@@ -948,9 +626,8 @@ so your units cannot collide with someone else's.
   reachable: an oscillator gets knob A (`shape`), knob B (`shift-shape`) and six
   edit parameters (hold `OSC` and turn `TYPE` to pick one, then turn the `B`
   knob) — so `noise` and `resonator` have an edit page and fill all six. A
-  modfx unit gets only the two knobs (`TIME`, `DEPTH`), a delay and a reverb get
-  those plus the shift parameter (`DEL`/`REVERB` held, then the `B` knob) — a
-  dry/wet on `irbody`, the notch count on `barber`. There are no sub-menus in the format: parameter names and
+  modfx unit gets only the two knobs (`TIME`, `DEPTH`). There are no sub-menus in
+  the format: parameter names and
   ranges are fixed in the manifest, so a deeper menu would have to be faked with
   one parameter as a page selector, which is why none of these need one.
 * A freshly installed unit sounds like its own start values, not like nothing.
@@ -962,15 +639,9 @@ so your units cannot collide with someone else's.
   on the patch wins, zeroes included, so a knob at the bottom still means the
   bottom. A and B are latched separately, because on `bowed` A is bow pressure
   and an A that was never chosen should not pull the level down with it.
-* `irbody` is mono in the wet path, so the body is centred, and its tails are
-  short by design: these are bodies, not halls — for a space, put a stock reverb
-  after it. Its wet path now rings for as long as it is fed, where the
-  convolution stopped after 85 ms.
-* The mkI gives a modfx unit 6 KB of SRAM and a delay or reverb unit 12 KB of
-  code space plus 2.4 MB of SDRAM; all units stay well inside those budgets now
-  that none of them links the maths library. `irbody` is 9432 of its 12288 and
-  needs none of the SDRAM now: its delay lines are one shared set of 2.6 KB in
-  SRAM, where two cost it 5 KB of the external memory.
+* The mkI gives an oscillator slot 32 KB and a modfx slot 6 KB of code space;
+  all five units stay well inside those budgets, and none of them links the
+  maths library.
 
 ## License
 

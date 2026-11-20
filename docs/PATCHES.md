@@ -49,18 +49,12 @@ For a bed: `pink`. For a texture that moves: `velvet` with `Grain` low. For
 percussion: `crackle` or `step` with a short `Trans`. For a pitched noise
 instrument: `tuned` with `Keytrk` at 100.
 
-## irbody: which body
-
-`violin` for a boxy midrange, `cello` for the same a size up, `piano` for a large
-soundboard, `guitar` for a bright box, `wood` for a knock, `steel` for a plate,
-`clarinet` for a tube, `drum` for a shell, `box` for a hollow wooden cavity — the
-only body built from delay taps instead of resonances, and the shortest of them. The A knob is a continuum: park it
-between two names to hear the in-between body. `B` is damping, SHIFT is the mix.
-
 ## Combinations that work
 
-* `bowed` (string) into `lpg` with the gate slow: a pad that opens with the note.
 * `noise` (velvet) into `reso`: a wind instrument with a moving pitch.
-* `resonator` (bell) into `barber` into a stock reverb: the bell smears.
-* `bowed` (metal) into `elements`: a bowed sheet that changes shape as it rings.
-* `resonator` (woodblock) into `irbody` (wood): percussion with a body.
+* `resonator` (bell) into `wavefolder`: harmonics on top of the strike, and the
+  bell keeps ringing under them.
+* `bowed` (metal) into `wavefolder` with FOLD low: a string with an edge it does
+  not have on its own.
+* `noise` (pluck) into `reso` into `wavefolder`: a plucked string whose body
+  opens up as it decays.

@@ -1,9 +1,0 @@
-# The rig this set is for: the oscillator slot, the resonator in MOD, and the
-# body in the delay slot so the reverb slot can stay on a stock reverb.
-#
-#   ./scripts/build.sh --pack rig
-noise
-resonator
-bowed
-reso
-irbody_delay
