@@ -393,7 +393,8 @@ should). The one thing that carries over between blocks is the comparator's gain
 which is a gain and not a sound. Both knobs move as 20 ms slopes spread across
 the samples of the block, because the drive is a gain into a curve and a gain that
 steps between parameter messages is a click on anything sustained. It is a small
-unit for a curve, and no maths library.
+unit for a curve: 1672 of the mod slot's 6144 bytes in the gcc 5.4 build, and no
+maths library.
 
 ### reflect — delay effect (a space from short delay lines)
 
@@ -568,7 +569,7 @@ is what the effect slots are handed between notes.
 | `resonator` | 5.0 KB | 0.4 KB | 20 ns/frame | 0.4 ns |
 | `bowed` | 2.7 KB | 4.1 KB | 12 ns/frame | 1.6 ns |
 | `reso` | 2.1 KB | 0.4 KB | 22 ns/frame | 2.6 ns |
-| `wavefolder` | 1.3 KB | none | 16 ns/frame | 5.0 ns |
+| `wavefolder` | 1.7 KB | none | 16 ns/frame | 5.0 ns |
 | `reflect` | 1.8 KB | 6.4 KB | 39 ns/frame | 1.9 ns |
 
 An effect slot is handed digital silence between notes, and every unit here skips
