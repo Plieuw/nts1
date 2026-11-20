@@ -49,6 +49,24 @@ For a bed: `pink`. For a texture that moves: `velvet` with `Grain` low. For
 percussion: `crackle` or `step` with a short `Trans`. For a pitched noise
 instrument: `tuned` with `Keytrk` at 100.
 
+## reflect: small room, big room
+
+A is the size and B is how long the reflections keep coming back, so the two
+ends of the knobs are the two obvious sounds and everything between moves
+smoothly.
+
+| Want | A (size) | B (decay) | DEL + B (mix) |
+| --- | --- | --- | --- |
+| a box around the note | 20 | 30 | 35 |
+| a small room, audible | 45 | 55 | 45 |
+| a long, dark space under a pad | 70 | 80 | 60 |
+| just the walls: a slap | 30 | 0 | 55 |
+| barely there, on a dry bass | 60 | 40 | 20 |
+
+With B at 0 it is four walls and no tail, which is the setting to reach for when
+the sound is already busy. With B high the unit keeps the dry signal, so the
+note stays in front of the room instead of dissolving into it.
+
 ## Combinations that work
 
 * `noise` (velvet) into `reso`: a wind instrument with a moving pitch.
@@ -58,3 +76,10 @@ instrument: `tuned` with `Keytrk` at 100.
   not have on its own.
 * `noise` (pluck) into `reso` into `wavefolder`: a plucked string whose body
   opens up as it decays.
+* `resonator` (woodblock or kalimba) into `reflect` with A low and B low: the
+  click gets its own room, which is what makes a small tuned block sound placed
+  rather than pasted.
+* `bowed` into `reflect` with A at 70 and B at 80: a sustained note inside a
+  space, still with a stock reverb after it.
+* `noise` (white) into `reflect` with the mix high and B near 1: a noise wash
+  that decays through the room's own reflection train instead of a filter.

@@ -66,12 +66,13 @@ def main(golden, current):
                     "does nothing with every parameter at zero (%.1f dB, needs "
                     "%.0f): a fresh program sends zeroes, not the unit's values"
                     % (cv[0], BOOT_DB))
-        elif key == "notch_db":
-            # The level of the difference between one notch and eight, against
-            # the signal: a knob that does nothing measures -300 dB.
+        elif key == "shift_db":
+            # The level of the difference between the two ends of the delay
+            # page's third knob, against the signal at the low end: a knob that
+            # does nothing measures -300 dB.
             if cv[0] < -45.0:
                 problems.append(
-                    "the notch count changes the signal by only %.1f dB (needs -45)"
+                    "the shift knob changes the signal by only %.1f dB (needs -45)"
                     % cv[0])
         elif key == "fuzzpeak":
             if cv[0] > 0.99:

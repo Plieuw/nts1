@@ -1,6 +1,5 @@
-# What the instrument gets: the three oscillators and the two modulation effects
-# this repository holds. The body model and the other effects are gone as of
-# v0.4.18-beta — they are in the history, not in the tree.
+# What the instrument gets: the three oscillators, the two modulation effects and
+# the reflection unit in the delay slot.
 #
 #   ./scripts/build.sh --pack live
 noise
@@ -8,3 +7,4 @@ resonator
 bowed
 reso
 wavefolder
+reflect

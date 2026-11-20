@@ -31,10 +31,11 @@ envelope away from its closest neighbour (4.3 at the closest, median 9.4), so a
 move of the model knob changes the object and not just its brightness. The numbering moved with it: this is the
 first version where model 5 is not the same instrument it used to be.# NTS-1 units
 
-Five custom units for the **KORG Nu:Tekt NTS-1 (mkI)**, built with the
-[logue SDK](https://github.com/korginc/logue-sdk) v1.1-0: three oscillators and
-two modulation effects. The delay and reverb slots stay on the instrument's own
-effects; everything here either makes the sound or shapes it.
+Six custom units for the **KORG Nu:Tekt NTS-1 (mkI)**, built with the
+[logue SDK](https://github.com/korginc/logue-sdk) v1.1-0: three oscillators, two
+modulation effects and a space in the delay slot. The reverb slot still ends the
+chain on the instrument's own effects; everything here either makes the sound,
+shapes it, or puts it in a room.
 
 | Unit | Slot | What it does | File |
 | --- | --- | --- | --- |
@@ -43,13 +44,15 @@ effects; everything here either makes the sound or shapes it.
 | `bowed` | OSC | Bowed string, sustains while the key is down | `bowed.ntkdigunit` |
 | `reso` | MOD | Twelve mode resonator with beating pairs, Rings in spirit | `reso.ntkdigunit` |
 | `wavefolder` | MOD | Five fold wavefolder, triangle to sine curve | `wavefolder.ntkdigunit` |
+| `reflect` | DEL | A space built from four short delay lines and its own reflections | `reflect.ntkdigunit` |
 
 The NTS-1 has one slot per type, so `noise`, `resonator` and `bowed` are
-alternatives for the oscillator slot, and `reso` and `wavefolder` are
-alternatives for the modulation slot. That is the whole repository: three
-oscillators and two shapers. There is no user slot for an envelope generator on
-the mkI — the MOD slot only accepts audio modulation effects — and the delay and
-reverb slots are left to the instrument's own effects.
+alternatives for the oscillator slot, `reso` and `wavefolder` are alternatives
+for the modulation slot, and `reflect` is the delay slot. That is the whole
+repository: three oscillators, two shapers and one room. There is no user slot
+for an envelope generator on the mkI — the MOD slot only accepts audio
+modulation effects — and the reverb slot is left to the instrument's own
+effects.
 
 ### Where each unit sits
 
@@ -64,6 +67,7 @@ where that chain does the most for it.
 | OSC | — | `bowed` | the only slot that is handed the note and keeps sounding for as long as the key is down; nothing later in the chain can make a struck sound sustain |
 | MOD | amp/EG | `reso` | it turns the oscillator into an instrument, so everything time based should come after it |
 | MOD | amp/EG | `wavefolder` | it folds what the amp envelope hands it, so a plucked note opens up as it decays and a held one sits at a steady fold: the shaper wants the shaped signal, and that is this slot |
+| DEL | MOD | `reflect` | a space has to come after the shaper, and this is the slot with the 12 KB and the memory a tail of a second needs. It keeps the dry signal, so a stock reverb can still end the chain |
 
 One consequence of that chain is worth saying out loud, because it decides how
 the units behave: only the OSC slot is released at all. When a key comes up, the
@@ -374,6 +378,54 @@ between parameter messages is a click on anything sustained. It is a small unit
 for a curve: 1292 of the mod slot's 6144 bytes in the gcc 5.4 build, and no
 maths library.
 
+### reflect — delay effect (a space from short delay lines)
+
+Not an impulse response and not a reverb in the usual sense: four short delay
+lines, 3.8 to 9.4 ms at full size, that feed each other back, with four wall
+reflections read off the input in front of them and two allpasses to smear what
+goes in. The response is the train of reflections those lines actually produce —
+nothing is convolved and no response is stored anywhere in the unit — and it
+changes with the size knob the way a room of a different size does.
+
+| Control | Function |
+| --- | --- |
+| A (TIME) | size: the lines and the walls scale from 0.35x to 1x |
+| B (DEPTH) | decay: 0.62 to 0.98 of the reflection coming back per pass |
+| DEL + B knob | dry/wet |
+
+The walls are four taps between half a millisecond and two, with alternating
+signs, so the first thing heard is a set of discrete reflections instead of one
+comb. The room is four lines damped at 5 kHz and fed back through a Householder
+matrix, so every line receives a little of all four: that is what turns four
+echoes into a tail. The two allpasses in front of the network are what make the
+first reflection a smear rather than four clicks.
+
+Two things the measurements say:
+
+* **The B knob is not a volume control.** A network with more feedback stores
+  more energy, so the wet path is scaled by (1 - feedback) and referenced to the
+  middle of the knob. On the 0.9 peak pluck it reads +1.3 dB at the middle of the
+  knobs, +1.3 dB with size at its bottom, +1.4 dB at its top, +0.3 dB with decay
+  at its bottom and +1.0 dB at its top: the whole travel of both knobs is inside
+  1.2 dB. Full wet reads +3.7 dB, which is a room at full mix, and 100% dry
+  reads -0.1 dB.
+* **The size knob glides the read distance, not the length.** Turning a delay
+  length in steps is a click; moving it as a slope is the pitch glide a tape
+  delay makes, which is the sound a delay line is supposed to make when it is
+  moved. Everything else the knobs do is a gain and takes the same 30 ms glide,
+  so nothing steps.
+
+The two channels are two points of the same room rather than two rooms: left
+weighs the four lines equally, right gives the even ones a plus and the odd ones
+a minus. That is a rotation, so it costs no level, and it is why the pair is
+wide — 0.22 correlation on the harness source and 0.42 above 2 kHz — without the
+sides being out of phase at any frequency. A delay between the channels would
+cancel in mono; a different weighting of the same reflections does not.
+
+It is in the delay slot because that is the slot with the memory a space needs,
+and because it adds the wet to the dry instead of replacing it: a stock reverb
+can still end the chain after it.
+
 ## Stacking the units
 
 The NTS-1 chain is oscillator → filter → amp/EG → modulation → delay → reverb,
@@ -386,18 +438,20 @@ What the mkI *does* constrain is which slots can be full at the same time:
 | Combination | Works | Why |
 | --- | --- | --- |
 | any one of `reso`, `wavefolder` | yes | there is one MOD slot, so they are alternatives |
-| `noise`, `resonator` or `bowed` with either of them | yes | the oscillator and the effect slots are independent |
+| `reflect` | yes | the delay slot is a slot of its own |
+| any oscillator with either shaper and `reflect` | yes | oscillator, modulation and delay are three independent slots |
+| `reflect` with the instrument's own reverb | yes | it is a custom *reverb* that would share a runtime with a custom delay; the stock reverb does not |
 
-So a full house here is one of the three oscillators and one of the two shapers,
-with the delay and reverb slots on the instrument's own effects.
+So a full house here is one of the three oscillators, one of the two shapers and
+`reflect` in the delay slot, with the reverb left to the instrument.
 
 ### What the numbers mean in a frame
 
 One block is 64 frames at 48 kHz: 1.333 ms, and the bench strikes a note every
 half second so an oscillator is timed while it is sounding and not after it has
-decayed. The most expensive unit here, `reso`, asks for 22 ns of host time per
-frame, which is 1.4 µs of a 1333 µs block, or 0.11%. Then `resonator` 20
-ns/frame, `wavefolder` 15, `bowed` 12 and `noise` 9. The
+decayed. The most expensive unit here, `reflect`, asks for 39 ns of host time per frame,
+which is 2.5 µs of a 1333 µs block, or 0.19%. Then `reso` 22 ns/frame,
+`resonator` 20, `wavefolder` 15, `bowed` 12 and `noise` 9. The
 Cortex-M4F in the
 NTS-1 runs at 168 MHz and has a single precision
 FPU, so the same code there costs several times what it costs on a desktop core;
@@ -427,7 +481,9 @@ instead of the forty eight simultaneous tones the goldens use.
   RMS (0.69) is above a full-scale sine and why raising its trim there only
   added distortion.
 * **An effect leaves the level of a dry note where it found it**, at the middle
-  of its knobs. With one plucked note `reso` reads +1.1 dB. `wavefolder` is the
+  of its knobs. With one plucked note `reso` reads +1.1 dB and `reflect` +1.3 dB,
+  the latter staying inside 1.2 dB of that over the whole travel of its size and
+  decay knobs (and reading +3.7 dB at full wet, which is a room at full mix). `wavefolder` is the
   exception, and on purpose: what a waveshaper hands on depends on how hard it is
   driven, so it is fitted where a patch actually sits — a pluck peaking at 0.9
   reads −0.2 dB at the middle of its knobs — and the same settings read +3.6 dB
@@ -576,7 +632,8 @@ packages on it rather than making another.
 ## Memory budgets
 
 The build checks that every unit still fits the memory its slot gives it — 32 KB
-for an oscillator, 6 KB for a modulation effect — and fails if one grew past it.
+for an oscillator, 6 KB for a modulation effect, 12 KB for a delay — and fails if
+one grew past it.
 `tools/check_budget.py` prints one line per unit:
 
 ```
@@ -639,9 +696,9 @@ so your units cannot collide with someone else's.
   on the patch wins, zeroes included, so a knob at the bottom still means the
   bottom. A and B are latched separately, because on `bowed` A is bow pressure
   and an A that was never chosen should not pull the level down with it.
-* The mkI gives an oscillator slot 32 KB and a modfx slot 6 KB of code space;
-  all five units stay well inside those budgets, and none of them links the
-  maths library.
+* The mkI gives an oscillator slot 32 KB, a modfx slot 6 KB and a delfx slot
+  12 KB of code space; all six units stay inside those budgets, and none of them
+  links the maths library.
 
 ## License
 

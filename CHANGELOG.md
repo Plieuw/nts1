@@ -3,6 +3,36 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## a space in the delay slot, from four lines
+
+- `reflect` 1.0-0 — a new delay effect whose impulse response is not a stored
+  response: four delay lines 3.8 to 9.4 ms long at full size that feed each
+  other back through a Householder matrix, four wall reflections read off the
+  input (half a millisecond to two, alternating in sign) and two allpasses in
+  front of the network. Nothing is convolved and no response is in the image;
+  the tail is the train of reflections the lines actually produce. A is the size
+  (0.35x to 1x), B the decay (0.62 to 0.98 of the reflection coming back per
+  pass), and the dry/wet is on DEL + B.
+- Fitted with `tools/levels.cpp --pluck --peak 0.9`: +1.3 dB at the middle of the
+  knobs, +1.3 dB with the size at its bottom and +1.4 dB at its top, +0.3 dB and
+  +1.0 dB at the ends of the decay knob. The wet path is scaled by (1 -
+  feedback), so B changes the length of the tail and not its level. Full wet
+  reads +3.7 dB, fully dry -0.1 dB.
+- Both channels are a different weighting of the same four reflections rather
+  than a delayed copy of one another: correlation 0.22 on the harness source and
+  0.42 above 2 kHz, so the pair is wide without cancelling in mono.
+- The size knob glides the read distance per sample — a tape-like pitch swoop
+  under a held note — instead of switching line lengths, which would click.
+  Every gain the knobs set takes the same 30 ms glide.
+- Bench on the host: 39 ns a frame busy, 1.9 ns idle. The idle path is the whole
+  block skipped on exact silence once the network has run down.
+- `tests/harness.cpp`'s delay-slot measurement is now `shift_db`: the third knob
+  on the delay page with the first held at the middle. It was `notch_db`, named
+  after a unit that is no longer here.
+- `packs/live.txt`, `scripts/build.sh` and `tests/run.sh` carry the sixth unit;
+  `reflect` is the only one in a delay slot, so a stock reverb can still follow
+  it.
+
 ## five units, and nothing else
 
 - The repository holds five units from v0.4.18-beta on: `noise`, `resonator`,
