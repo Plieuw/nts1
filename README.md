@@ -356,7 +356,8 @@ piecewise straight, so every reflection is a corner and the top of the knob is
 hard and buzzy; a sine fold is the same walk with round corners. The B knob is
 the one in between, so it moves the edge of the harmonics rather than how many
 of them there are: at the middle of the drive and on the 0.9 peak pluck, the two
-ends of it land 2.0 dB apart in level, the sine end being the louder.
+ends of it land 2.0 dB apart on the curve alone and 0.4 dB apart once the level
+comparator has evened them out, the sine end being the louder of the two.
 
 Drive is gain as well as fold, and a knob that is really a volume control is not
 what this is for. What the level does as the drive goes up is not 1/drive,
@@ -365,25 +366,34 @@ folded, while the clean end still tracks the drive. Measured with
 `tools/levels.cpp --pluck --peak 0.9` — a pluck that peaks at 0.9, which is where
 a loud patch sits — the curve on its own is +1.7 dB at the clean end, +6.4 dB at
 the middle of the knob and +7.3 dB at the top. So the gain is 1.7 dB down
-throughout plus 1.0 to 1.9 of compensation that saturates with the drive, and
-the same measurement then reads −0.1 dB at the clean end, 0.0 dB at the middle
-and 0.0 dB at the top, the whole sweep inside 0.3 dB of the dry level (the worst
-point is −0.25 dB, a quarter of the way up).
+throughout plus 1.0 to 1.9 of compensation that saturates with the drive.
 
-On quieter material it is a folder with gain, which is what a folder is: on the
-harness's broadband source, which peaks 20 dB lower, the middle reads +4.0 dB and
-the top +12.5 dB, because there the drive amplifies more than it folds. Fitting
-that instead would mean throwing away the level of a patch that is loud enough
-to fold.
+That is a fit to one input level, and a folder's level depends on the level it is
+fed: at 5x, a pluck that peaks at 0.9 comes out where it went in, and the same
+pluck 20 dB quieter comes out 9 dB louder, because the quiet one is barely folded
+and its drive is just gain. A second mechanism closes that. Every block is
+compared with the block it was given and a gain is moved by the difference —
+15 ms to come down, 200 ms to come back up, never more than 10 dB either way, and
+taken whole on the first block of a note so a note never starts on the gain of the
+one before it. The unit therefore hands on the level it was given whatever that
+level is: measured at five input peaks from -20 dB to full scale and at the
+bottom, middle and top of FOLD, the whole set lands between −1.5 and +0.6 dB of
+the dry level, where without it the same fifteen measurements spanned 10 dB
+(+8.8 dB for the quietest patch at the top of the knob, −0.9 dB for the loudest).
+It costs a multiply and two accumulations a sample.
 
-The unit keeps no state and has no tail: the curve is a function of the sample
-going through it, so digital silence in is exactly digital silence out and the
-block is skipped (the knob ramps still run, so a knob moved over silence lands
-where it should). Both knobs move as 20 ms slopes spread across the samples of
-the block, because the drive is a gain into a curve and a gain that steps
-between parameter messages is a click on anything sustained. It is a small unit
-for a curve: 1292 of the mod slot's 6144 bytes in the gcc 5.4 build, and no
-maths library.
+Which is the point of the comparator: the timbre follows the drive and the level
+does not, so a patch does not change how loud it is when the effect is switched
+in, however quietly it happens to play.
+
+The curve keeps no state and has no tail: it is a function of the sample going
+through it, so digital silence in is exactly digital silence out and the block is
+skipped (the knob ramps still run, so a knob moved over silence lands where it
+should). The one thing that carries over between blocks is the comparator's gain,
+which is a gain and not a sound. Both knobs move as 20 ms slopes spread across
+the samples of the block, because the drive is a gain into a curve and a gain that
+steps between parameter messages is a click on anything sustained. It is a small
+unit for a curve, and no maths library.
 
 ### reflect — delay effect (a space from short delay lines)
 
@@ -460,7 +470,7 @@ One block is 64 frames at 48 kHz: 1.333 ms, and the bench strikes a note every
 half second so an oscillator is timed while it is sounding and not after it has
 decayed. The most expensive unit here, `reflect`, asks for 39 ns of host time per frame,
 which is 2.5 µs of a 1333 µs block, or 0.19%. Then `reso` 22 ns/frame,
-`resonator` 20, `wavefolder` 15, `bowed` 12 and `noise` 9. The
+`resonator` 20, `wavefolder` 16, `bowed` 12 and `noise` 9. The
 Cortex-M4F in the
 NTS-1 runs at 168 MHz and has a single precision
 FPU, so the same code there costs several times what it costs on a desktop core;
@@ -492,11 +502,12 @@ instead of the forty eight simultaneous tones the goldens use.
 * **An effect leaves the level of a dry note where it found it**, at the middle
   of its knobs. With one plucked note `reso` reads +1.1 dB and `reflect` +1.3 dB,
   the latter staying inside 1.2 dB of that over the whole travel of its size and
-  decay knobs (and reading +3.7 dB at full wet, which is a room at full mix). `wavefolder` is the
-  exception, and on purpose: what a waveshaper hands on depends on how hard it is
-  driven, so it is fitted where a patch actually sits — a pluck peaking at 0.9
-  reads −0.2 dB at the middle of its knobs — and the same settings read +3.6 dB
-  on a quieter pluck, which peaks at 0.33.
+  decay   knobs (and reading +3.7 dB at full wet, which is a room at full mix).
+  `wavefolder` is the one that needed more than a fit: its drive is gain as well
+  as fold, so it is fitted on a pluck that peaks at 0.9 and then held there by a
+  level comparator, which is what keeps a quieter patch from coming out louder
+  (see its section: −1.5 to +0.6 dB over five input levels and the whole knob
+travel).
 
 The `waves` demo itself does not build against the host stand-in (its `dsp`
 headers want the ARM SDK's own float helpers), so the reference is read from its
@@ -557,7 +568,7 @@ is what the effect slots are handed between notes.
 | `resonator` | 5.0 KB | 0.4 KB | 20 ns/frame | 0.4 ns |
 | `bowed` | 2.7 KB | 4.1 KB | 12 ns/frame | 1.6 ns |
 | `reso` | 2.1 KB | 0.4 KB | 22 ns/frame | 2.6 ns |
-| `wavefolder` | 1.3 KB | none | 15 ns/frame | 2.8 ns |
+| `wavefolder` | 1.3 KB | none | 16 ns/frame | 5.0 ns |
 | `reflect` | 1.8 KB | 6.4 KB | 39 ns/frame | 1.9 ns |
 
 An effect slot is handed digital silence between notes, and every unit here skips

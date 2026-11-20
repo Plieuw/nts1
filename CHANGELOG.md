@@ -3,6 +3,27 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## the wavefolder hands on the level it was given
+
+- `wavefolder` 1.2-0 — the level fit was only true for one input level. The drive
+  is gain as well as fold, so on a quiet patch the fold is mostly that gain: at
+  5x, a pluck that peaks at 0.9 came out where it went in and the same pluck
+  20 dB quieter came out 8.8 dB louder, which is the volume jump heard against
+  the instrument's own sound. Measured over five input peaks from -20 dB to full
+  scale and the bottom, middle and top of FOLD, the fifteen cases spanned 10 dB
+  (-0.9 to +8.8).
+- A level comparator closes that: each block is compared with the block it was
+  given and a gain is moved by the difference — 15 ms to come down, 200 ms to
+  come back up, never more than 10 dB, taken whole on the first block of a note
+  and while a knob is still ramping. The same fifteen measurements now land
+  between -1.5 and +0.6 dB. The timbre still follows the knob; the level does
+  not, so a patch does not get louder when the effect is switched in.
+- It costs a multiply and two accumulations per sample: 16 ns a frame on the host
+  instead of 15, and 5.0 ns idle instead of 2.8 (the comparator runs whether or
+  not the folder is folding).
+- The two ends of SHAPE are now 0.4 dB apart instead of 2.0, since the comparator
+  evens out what the two curves do to the level as well.
+
 ## the wavefolder's fold knob covers the folds it has
 
 - `wavefolder` 1.1-0 — the FOLD knob ran 1x to 8x while the curve caps at five

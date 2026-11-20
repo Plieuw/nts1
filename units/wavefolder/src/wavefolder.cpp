@@ -53,6 +53,22 @@ constexpr float kDriveMax = 5.f;
 // That leaves the sweep within 0.3 dB of the dry level, the middle at 0.0 dB.
 constexpr float kTrim = 0.82f;
 constexpr float kCompDepth = 0.9f;
+// Unity by itself, or unity at one input level? The feed-forward trim above is
+// fitted on a pluck that peaks at 0.9, and how much of the drive's gain survives
+// the curve depends on how loudly the patch plays: at 5x that pluck comes out
+// where it went in, while the same pluck 20 dB quieter comes out 9 dB louder.
+// No single trim holds unity across that, so the block is also compared with the
+// block that was given to it and a gain is moved by the difference: 25 ms to
+// come down, 200 ms to come back up, and never more than 10 dB either way. That
+// is slow enough not to ride a note's own envelope and quick enough to keep a
+// patch from jumping when the effect is switched in. The first block of a note
+// takes the correction whole instead of walking to it: a note that starts on a
+// gain left over from quieter material would be 6 dB loud for its first tenth of
+// a second, which is the very thing this is for.
+constexpr float kAgcAttack = 1.f / (0.015f * kFs);
+constexpr float kAgcRelease = 1.f / (0.200f * kFs);
+constexpr float kAgcMax = 3.1622777f;  // +10 dB
+constexpr float kAgcMin = 0.3162278f;  // -10 dB
 // 2^-1.8u: the compensation is within half a decibel of its final value by the
 // middle of the knob, which is where the curve has folded everything it is going
 // to fold. It was 2.4 while the drive ran to 8; with the drive on the folds
@@ -73,6 +89,8 @@ struct State {
   float drive_target;
   float shape;         // 0 = triangle fold, 1 = sine fold
   float shape_target;
+  float agc;           // what the level comparator is correcting with
+  int agc_primed;      // set once a note has been measured against itself
 };
 
 State s;
@@ -150,6 +168,8 @@ void MODFX_INIT(uint32_t platform, uint32_t api) {
   s.drive_target = s.drive;
   s.shape = 0.5f;  // between the two curves
   s.shape_target = s.shape;
+  s.agc = 1.f;
+  s.agc_primed = 0;
 }
 
 void MODFX_PROCESS(const float *main_xn, float *main_yn, const float *sub_xn,
@@ -186,6 +206,8 @@ void MODFX_PROCESS(const float *main_xn, float *main_yn, const float *sub_xn,
     if (has_sub)
       for (uint32_t i = 0; i < frames; ++i)
         sub_yn[i] = 0.f;
+    // The next note is a new level to measure, not a continuation of this one.
+    s.agc_primed = 0;
     return;
   }
 
@@ -196,20 +218,57 @@ void MODFX_PROCESS(const float *main_xn, float *main_yn, const float *sub_xn,
   float drive = drive_from;
   float shape = shape_from;
   float gain = gain_from;
+  const float agc = s.agc;
+  // The level comparator below needs both sides of the block: what went in and
+  // what came out, over the two channels and the whole block.
+  float e_in = 0.f;
+  float e_out = 0.f;
 
   for (uint32_t i = 0; i < frames; ++i) {
     drive += d_drive;
     shape += d_shape;
     gain += d_gain;
-    if (!main_silent)
-      main_yn[i] = gain * fold(main_xn[i], drive, shape);
-    else
+    const float g = agc * gain;
+    if (!main_silent) {
+      const float x = main_xn[i];
+      const float y = g * fold(x, drive, shape);
+      main_yn[i] = y;
+      e_in += x * x;
+      e_out += y * y;
+    } else {
       main_yn[i] = 0.f;
+    }
     if (has_sub) {
-      if (!sub_silent)
-        sub_yn[i] = gain * fold(sub_xn[i], drive, shape);
-      else
+      if (!sub_silent) {
+        const float x = sub_xn[i];
+        const float y = g * fold(x, drive, shape);
+        sub_yn[i] = y;
+        e_in += x * x;
+        e_out += y * y;
+      } else {
         sub_yn[i] = 0.f;
+      }
+    }
+  }
+
+  // What the curve did to the level that the trim and its compensation could
+  // not know about: the ratio of what came out to what went in is the gain the
+  // block still needs, and it is moved towards over the next blocks at the two
+  // rates above, whichever way it has to go.
+  if (e_in > 1e-12f && e_out > 1e-12f) {
+    const float want = clipminmaxf(kAgcMin, s.agc * arc_sqrtf(e_in / e_out), kAgcMax);
+    // A knob that is still ramping is a level that is still changing: walking
+    // the gain towards it would be a swell on top of the turn. Take it whole
+    // while the drive or the shape moves, and smooth once they have landed.
+    if (!s.agc_primed || drive_to != drive_from || shape_to != shape_from) {
+      s.agc = want;
+      s.agc_primed = 1;
+    } else {
+      const float rate = (want < s.agc) ? kAgcAttack : kAgcRelease;
+      float step = rate * (float)frames;
+      if (step > 1.f)
+        step = 1.f;
+      s.agc += (want - s.agc) * step;
     }
   }
 }
@@ -237,6 +296,9 @@ void MODFX_PARAM(uint8_t index, int32_t value) {
   }
 }
 
-void MODFX_SUSPEND(void) {}
+void MODFX_SUSPEND(void) {
+  s.agc = 1.f;
+  s.agc_primed = 0;
+}
 
 void MODFX_RESUME(void) {}
