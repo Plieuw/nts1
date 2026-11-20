@@ -13,7 +13,7 @@
  * the one in between: the triangle fold is the hard, buzzy end (a piecewise
  * straight line, so every fold is a corner) and the sine fold is the round one.
  *
- * A-knob (TIME)   FOLD   -- drive into the folds, 1x .. 8x
+ * A-knob (TIME)   FOLD   -- drive into the folds, 1x .. 5x
  * B-knob (DEPTH)  SHAPE  -- triangle fold .. sine fold
  */
 
@@ -32,32 +32,37 @@ constexpr float kFs = 48000.f;
 constexpr float kMaxFolds = 5.f;
 
 // The FOLD knob is the drive: 1x at the bottom, where a full scale signal only
-// just reaches the fold point and anything below it passes untouched, up to 8x
-// at the top, where a full scale signal is folded five times and then rides the
-// cap. Exponential, because that is how the fold rate is heard: the same turn
-// adds the same number of reflections whatever the input level is.
-constexpr float kDriveSpan = 3.f;   // 2^3 = 8
+// just reaches the fold point and anything below it passes untouched, up to 5x
+// at the top, where a full scale signal is folded five times — the same point
+// the cap sits at. The two used to be apart: with 8x at the top, a full scale
+// signal was at the cap from 77% of the knob on and the last quarter did
+// nothing at all. Exponential, because that is how the fold rate is heard: the
+// same turn adds the same number of reflections whatever the input level is.
+constexpr float kDriveSpan = 2.3219281f;  // log2(5): 1x .. 5x, one fold per step
 constexpr float kDriveMin = 1.f;
-constexpr float kDriveMax = 8.f;
+constexpr float kDriveMax = 5.f;
 
 // Drive is also gain, and a folder whose level follows its knob is a volume knob
 // with extra steps. What the level does as the drive goes up is not 1/drive,
 // though: a folded signal is bounded, so its RMS stops growing once the input is
 // being folded, while the clean end still tracks the drive. Measured on a pluck
 // that peaks at 0.9, the level of a loud patch, the curve alone is 1.7 dB up at
-// the clean end, 7.0 dB at the middle of the knob and 7.2 dB at the top. So the
+// the clean end, 6.4 dB at the middle of the knob and 7.3 dB at the top. So the
 // gain is 1.7 dB down throughout, plus a compensation that saturates with the
 // drive: 1.0 at the clean end to about 1.9 from the middle on, which is 5.6 dB.
-// That leaves the sweep within 0.8 dB of the dry level, the middle at -0.2 dB.
+// That leaves the sweep within 0.3 dB of the dry level, the middle at 0.0 dB.
 constexpr float kTrim = 0.82f;
 constexpr float kCompDepth = 0.9f;
-// 2^-2.4u is e^-1.7u: most of the compensation is in by a sixth of the knob.
-constexpr float kCompRate = 2.4f;
+// 2^-1.8u: the compensation is within half a decibel of its final value by the
+// middle of the knob, which is where the curve has folded everything it is going
+// to fold. It was 2.4 while the drive ran to 8; with the drive on the folds
+// themselves, 1.8 is what tracks them.
+constexpr float kCompRate = 1.8f;
 
 // Knob moves are slopes over 20 ms, spread across the samples of the block: a
 // folder is a gain into a curve, and a gain that steps between parameter
 // messages is a click on anything sustained. Two steps, because the drive walks
-// 1..8 and the shape only 0..1.
+// 1..5 and the shape only 0..1.
 constexpr float kShapeStep = 1.f / (0.020f * kFs);
 constexpr float kDriveStep = (kDriveMax - kDriveMin) / (0.020f * kFs);
 
@@ -141,7 +146,7 @@ void MODFX_INIT(uint32_t platform, uint32_t api) {
   (void)platform;
   (void)api;
 
-  s.drive = 2.8284271f;  // 2^1.5: the middle of the knob
+  s.drive = 2.2360680f;  // sqrt(5): the middle of the knob
   s.drive_target = s.drive;
   s.shape = 0.5f;  // between the two curves
   s.shape_target = s.shape;

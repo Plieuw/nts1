@@ -342,26 +342,33 @@ walks from a clean signal into five reflections instead of into a fuzz.
 
 | Control | Function |
 | --- | --- |
-| A (TIME) | fold: drive into the curve, 1x .. 8x |
+| A (TIME) | fold: drive into the curve, 1x .. 5x |
 | B (DEPTH) | shape: triangle fold .. sine fold |
+
+The drive ends where the cap begins. It used to run to 8x, which put a full
+scale signal at the fifth fold from 77% of the knob on: the last quarter of the
+turn did nothing (and on a pluck that peaks at 0.9, the last sixth). With 5x at
+the top, every equal turn adds one reflection and the top of the knob is exactly
+the fifth one.
 
 The two curves are the ones folders are usually built from. A triangle fold is
 piecewise straight, so every reflection is a corner and the top of the knob is
 hard and buzzy; a sine fold is the same walk with round corners. The B knob is
 the one in between, so it moves the edge of the harmonics rather than how many
 of them there are: at the middle of the drive and on the 0.9 peak pluck, the two
-ends of it land 1.8 dB apart in level, the sine end being the louder.
+ends of it land 2.0 dB apart in level, the sine end being the louder.
 
 Drive is gain as well as fold, and a knob that is really a volume control is not
 what this is for. What the level does as the drive goes up is not 1/drive,
 though: a folded signal is bounded, so its RMS stops growing once the input is
 folded, while the clean end still tracks the drive. Measured with
 `tools/levels.cpp --pluck --peak 0.9` — a pluck that peaks at 0.9, which is where
-a loud patch sits — the curve on its own is +1.7 dB at the clean end, +7.0 dB at
-the middle of the knob and +7.2 dB at the top. So the gain is 1.7 dB down
+a loud patch sits — the curve on its own is +1.7 dB at the clean end, +6.4 dB at
+the middle of the knob and +7.3 dB at the top. So the gain is 1.7 dB down
 throughout plus 1.0 to 1.9 of compensation that saturates with the drive, and
-the same measurement then reads −0.1 dB at the clean end, −0.2 dB at the middle
-and −0.1 dB at the top, with the whole sweep within 0.8 dB of the dry level.
+the same measurement then reads −0.1 dB at the clean end, 0.0 dB at the middle
+and 0.0 dB at the top, the whole sweep inside 0.3 dB of the dry level (the worst
+point is −0.25 dB, a quarter of the way up).
 
 On quieter material it is a folder with gain, which is what a folder is: on the
 harness's broadband source, which peaks 20 dB lower, the middle reads +4.0 dB and

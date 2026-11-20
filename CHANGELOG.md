@@ -3,6 +3,22 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## the wavefolder's fold knob covers the folds it has
+
+- `wavefolder` 1.1-0 — the FOLD knob ran 1x to 8x while the curve caps at five
+  reflections, so a full scale signal was at the cap from 77% of the knob on and
+  the last quarter of the turn did nothing (the last sixth on a pluck that peaks
+  at 0.9). The drive now ends at 5x: one fold per equal turn, and the top of the
+  knob is exactly the fifth reflection. Same exponential shape, same 20 ms ramps.
+- The level fit was re-measured on the shorter span and the compensation made to
+  track it (its rate went from 2.4 to 1.8): the curve alone is +1.7, +6.4 and
+  +7.3 dB at the clean end, the middle and the top, and with the trim the sweep
+  reads -0.1, 0.0 and 0.0 dB with the worst point at -0.25 dB. It was inside
+  0.8 dB of the dry level before; it is inside 0.3 dB now.
+- What that changes at a given position: the folder folds less than it did — the
+  middle of the knob is 2.24x instead of 2.83x and the top 5x instead of 8x — and
+  the two ends of the SHAPE knob now land 2.0 dB apart instead of 1.8.
+
 ## a space in the delay slot, from four lines
 
 - `reflect` 1.0-0 — a new delay effect whose impulse response is not a stored
