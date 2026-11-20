@@ -439,7 +439,7 @@ block is skipped (the knob ramps still run, so a knob moved over silence lands
 where it should). Both knobs move as 20 ms slopes spread across the samples of
 the block, because the drive is a gain into a curve and a gain that steps
 between parameter messages is a click on anything sustained. It is a small unit
-for a curve: 1332 of the mod slot's 6144 bytes in the gcc 5.4 build, and no
+for a curve: 1292 of the mod slot's 6144 bytes in the gcc 5.4 build, and no
 maths library.
 
 ### barber — delay effect (barberpole phaser)
