@@ -41,11 +41,18 @@ constexpr float kDriveMin = 1.f;
 constexpr float kDriveMax = 8.f;
 
 // Drive is also gain, and a folder whose level follows its knob is a volume knob
-// with extra steps. Three quarters of it is taken back out (1/drive^0.75): that
-// leaves the middle of the knob at unity on material that is being folded, the
-// clean end 1.3 dB down and the top no more than 2.8 dB up. Full compensation
-// would instead throw away the level of anything loud enough to fold.
-constexpr float kTrim = 0.67f;
+// with extra steps. What the level does as the drive goes up is not 1/drive,
+// though: a folded signal is bounded, so its RMS stops growing once the input is
+// being folded, while the clean end still tracks the drive. Measured on a pluck
+// that peaks at 0.9, the level of a loud patch, the curve alone is 1.7 dB up at
+// the clean end, 7.0 dB at the middle of the knob and 7.2 dB at the top. So the
+// gain is 1.7 dB down throughout, plus a compensation that saturates with the
+// drive: 1.0 at the clean end to about 1.9 from the middle on, which is 5.6 dB.
+// That leaves the sweep within 0.8 dB of the dry level, the middle at -0.2 dB.
+constexpr float kTrim = 0.82f;
+constexpr float kCompDepth = 0.9f;
+// 2^-2.4u is e^-1.7u: most of the compensation is in by a sixth of the knob.
+constexpr float kCompRate = 2.4f;
 
 // Knob moves are slopes over 20 ms, spread across the samples of the block: a
 // folder is a gain into a curve, and a gain that steps between parameter
@@ -152,11 +159,13 @@ void MODFX_PROCESS(const float *main_xn, float *main_yn, const float *sub_xn,
   const float shape_to = approach(s.shape, s.shape_target, (float)frames * kShapeStep);
   s.drive = drive_to;
   s.shape = shape_to;
-  // The compensation follows the ramped drive, so the two move together. drive
-  // to the 3/4 is sqrt(drive * sqrt(drive)): four square roots a block, none a
-  // sample.
-  const float comp_from = arc_sqrtf(drive_from * arc_sqrtf(drive_from));
-  const float comp_to = arc_sqrtf(drive_to * arc_sqrtf(drive_to));
+  // The compensation follows the ramped drive, so the two move together:
+  // 1 + 0.9 * (1 - 2^(-2.4 (drive - 1))), which is 1 at the clean end and 1.9
+  // from the middle of the knob on. Two of these a block, none a sample.
+  const float comp_from =
+      1.f + kCompDepth * (1.f - arc_pow2f(-kCompRate * (drive_from - kDriveMin)));
+  const float comp_to =
+      1.f + kCompDepth * (1.f - arc_pow2f(-kCompRate * (drive_to - kDriveMin)));
   const float gain_from = kTrim / comp_from;
   const float gain_to = kTrim / comp_to;
 

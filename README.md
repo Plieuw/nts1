@@ -413,14 +413,25 @@ The two curves are the ones folders are usually built from. A triangle fold is
 piecewise straight, so every reflection is a corner and the top of the knob is
 hard and buzzy; a sine fold is the same walk with round corners. The B knob is
 the one in between, so it moves the edge of the harmonics rather than how many
-of them there are: at the middle of the drive, the two ends of it land 3.8 dB
-apart in level on the broadband source, the sine end being the louder.
+of them there are: at the middle of the drive and on the 0.9 peak pluck, the two
+ends of it land 1.8 dB apart in level, the sine end being the louder.
 
 Drive is gain as well as fold, and a knob that is really a volume control is not
-what this is for, so three quarters of the drive is taken back out
-(1 / drive^0.75). Measured with `tools/levels.cpp`: the middle of the knobs is
-+0.8 dB on the broadband source and +0.4 dB on a plucked note, the clean end of
-the FOLD knob is −1.3 dB, and the whole sweep stays between −1.1 and +2.8 dB.
+what this is for. What the level does as the drive goes up is not 1/drive,
+though: a folded signal is bounded, so its RMS stops growing once the input is
+folded, while the clean end still tracks the drive. Measured with
+`tools/levels.cpp --pluck --peak 0.9` — a pluck that peaks at 0.9, which is where
+a loud patch sits — the curve on its own is +1.7 dB at the clean end, +7.0 dB at
+the middle of the knob and +7.2 dB at the top. So the gain is 1.7 dB down
+throughout plus 1.0 to 1.9 of compensation that saturates with the drive, and
+the same measurement then reads −0.1 dB at the clean end, −0.2 dB at the middle
+and −0.1 dB at the top, with the whole sweep within 0.8 dB of the dry level.
+
+On quieter material it is a folder with gain, which is what a folder is: on the
+harness's broadband source, which peaks 20 dB lower, the middle reads +4.0 dB and
+the top +12.5 dB, because there the drive amplifies more than it folds. Fitting
+that instead would mean throwing away the level of a patch that is loud enough
+to fold.
 
 The unit keeps no state and has no tail: the curve is a function of the sample
 going through it, so digital silence in is exactly digital silence out and the
@@ -625,7 +636,7 @@ One block is 64 frames at 48 kHz: 1.333 ms, and the bench strikes a note every
 half second so an oscillator is timed while it is sounding and not after it has
 decayed. The most expensive unit here, `barber`, asks for 48 ns of host time per
 frame, which is 3.1 µs of a 1333 µs block, or 0.23%. Then `irbody` 28 ns/frame,
-`reso` 22, `lpg` 21, `resonator` 20, `wavefolder` 19, `elements` 16, `bowed` 12
+`reso` 22, `lpg` 21, `resonator` 20, `elements` 16, `wavefolder` 14, `bowed` 12
 and `noise` 9. The
 Cortex-M4F in the
 NTS-1 runs at 168 MHz and has a single precision
@@ -645,7 +656,9 @@ memory in the oscillator slot: `bowed` keeps one delay loop of 1024 samples and
 
 A patch should not jump when the unit changes, so the levels are fitted to the
 SDK's own reference rather than to each other. `tools/levels.cpp` is the
-measurement: it takes the same `--ranges` as the harness, and `--pluck` plays
+measurement: it takes the same `--ranges` as the harness, `--peak` scales the
+source to the level a patch actually reaches, `--settle` runs the unit before the
+source starts so a knob ramp has arrived, and `--pluck` plays
 one note with a decay, which is what a body, a gate and a resonator answer,
 instead of the forty eight simultaneous tones the goldens use.
 
@@ -659,7 +672,11 @@ instead of the forty eight simultaneous tones the goldens use.
   added distortion.
 * **An effect leaves the level of a dry note where it found it**, at the middle
   of its knobs. With one plucked note: `lpg` +0.4 dB, `reso` +1.1, `barber`
-  +0.8, `elements` −0.0, `wavefolder` +0.4 and `irbody` +0.8. `elements` was 9.8 dB down and
+  +0.8, `elements` −0.0 and `irbody` +0.8. `wavefolder` is the exception, and on
+  purpose: what a waveshaper hands on depends on how hard it is driven, so it is
+  fitted where a patch actually sits — a pluck peaking at 0.9 reads −0.2 dB at
+  the middle of its knobs — and the same settings read +3.6 dB on a quieter
+  pluck, which peaks at 0.33. `elements` was 9.8 dB down and
   `irbody` 17.3 dB up — the body sat on top of the note and clipped it on every
   pluck, where a reverb should sit behind it.
 

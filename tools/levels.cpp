@@ -27,6 +27,8 @@ static const double kRate = 48000.0;
 static const int kSignal = 12000;  // 0.25 s: the length of the source
 static int gLo[8], gHi[8], gKnobs = 8, gNote = 60;
 static bool gPluck = false;
+static double gPeak = 0.0;   // > 0: scale the source so its peak is this
+static int gSettle = 0;      // samples of silence before the source starts
 
 #if UNITKIND == 0
 static user_osc_param_t gParam;
@@ -62,7 +64,12 @@ static void unitParam(int index, int value) { _hook_param((uint8_t)index, (int32
 // decay instead: a body, a gate and a resonator answer a single note very
 // differently from the way they answer forty eight tones at once, and it is the
 // single note a patch is judged on.
-static float srcAt(int p) {
+//
+// Neither source is full scale on its own: the pluck peaks around 0.54 and the
+// broadband one around 0.1. --peak scales whichever is in use so its highest
+// sample is where a loud patch sits, which is the only place a waveshaper's
+// level can honestly be judged.
+static float rawAt(int p) {
   if (p >= kSignal) return 0.f;
   if (gPluck) {
     const double env = exp(-(double)p / 9600.0);  // 0.2 s
@@ -77,6 +84,13 @@ static float srcAt(int p) {
     v += 0.006 * sin(2.0 * M_PI * f * p / kRate + i * 1.7);
   }
   return (float)v;
+}
+
+static double gScale = 1.0;
+static bool gSilent = false;
+
+static float srcAt(int p) {
+  return gSilent ? 0.f : (float)(rawAt(p) * gScale);
 }
 static void unitRender(float *out, int n) {
   int done = 0;
@@ -120,6 +134,11 @@ int main(int argc, char **argv) {
     if (strcmp(argv[a], "--knobs") == 0) { gKnobs = atoi(argv[++a]); continue; }
     if (strcmp(argv[a], "--note") == 0) { gNote = atoi(argv[++a]); continue; }
     if (strcmp(argv[a], "--pluck") == 0) { gPluck = true; continue; }
+    if (strcmp(argv[a], "--peak") == 0) { gPeak = atof(argv[++a]); continue; }
+    // A unit that ramps its own parameters needs to arrive at the knob position
+    // before the note does, or the measurement is of the ramp: the pluck's peak
+    // is in the first millisecond, which is exactly where a 20 ms ramp starts.
+    if (strcmp(argv[a], "--settle") == 0) { gSettle = atoi(argv[++a]); continue; }
     if (strcmp(argv[a], "--ranges") != 0) continue;
     const char *p = argv[a + 1];
     for (int i = 0; i < 8 && *p; ++i) {
@@ -130,9 +149,27 @@ int main(int argc, char **argv) {
     }
   }
 
+  if (gPeak > 0.0) {
+    double p = 0.0;
+    for (int i = 0; i < kSignal; ++i) {
+      const double a = fabs((double)rawAt(i));
+      if (a > p) p = a;
+    }
+    if (p > 1e-9) gScale = gPeak / p;
+  }
+
   static float out[48000];
   unitInit();
   for (int i = 0; i < gKnobs; ++i) unitParam(i, (gLo[i] + gHi[i]) / 2);
+
+  if (gSettle > 0) {
+    static float scratch[24000];
+    const int n = (gSettle < 24000) ? gSettle : 24000;
+    gSilent = true;
+    unitRender(scratch, n);
+    gSilent = false;
+    gPos = 0;
+  }
 
 #if UNITKIND == 0
   unitNote(gNote);
@@ -147,8 +184,9 @@ int main(int argc, char **argv) {
   static float in[kSignal];
   for (int i = 0; i < kSignal; ++i) in[i] = srcAt(i);
   const double ri = rmsOf(in, kSignal), ro = rmsOf(out, kSignal);
-  printf("in_rms %.4f out_rms %.4f out_peak %.4f gain_db %+.2f\n", ri, ro,
-         peakOf(out, kSignal), 20.0 * log10(ro / ri));
+  printf("in_rms %.4f in_peak %.4f out_rms %.4f out_peak %.4f gain_db %+.2f\n",
+         ri, peakOf(in, kSignal), ro, peakOf(out, kSignal),
+         20.0 * log10(ro / ri));
 #endif
   return 0;
 }

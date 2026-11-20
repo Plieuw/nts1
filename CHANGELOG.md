@@ -11,17 +11,26 @@ the top of the knob and rides the cap past that; B morphs the curve from a
 triangle fold (piecewise straight, a corner at every reflection) to a sine fold
 (round corners). Both knobs move as 20 ms slopes spread over the samples of the
 block, the unit keeps no state at all, and a silent block is skipped exactly.
-- The drive is gain as well as fold, so three quarters of it is taken back out
-(1 / drive^0.75). Without that, a turn of the FOLD knob was a volume knob first
-and a fold knob second: +11.4 dB at the middle of the range. Measured with
-`tools/levels.cpp`: +0.8 dB at the middle on the broadband source, +0.4 dB on a
-plucked note, −1.3 dB at the clean end, and −1.1 to +2.8 dB over the whole FOLD
-sweep. With the drive in the middle, the two ends of the SHAPE knob land 3.8 dB
-apart on that source, the sine end being the louder.
+- The drive is gain as well as fold, so the level is compensated: 1.7 dB down
+throughout plus 1.0 to 1.9 that saturates with the drive. A plain 1/drive is
+wrong here — a folded signal is bounded, so its RMS stops growing once the input
+is folded — and fitting it at the harness's −30 dB source put the middle 3.3 dB
+down and the top 9.6 dB down on material at full scale. Measured with
+`tools/levels.cpp --pluck --peak 0.9`: −0.1 dB at the clean end, −0.2 dB at the
+middle and −0.1 dB at the top, the whole sweep within 0.8 dB of the dry level.
+On the broadband source, which peaks 20 dB lower, it is +4.0 dB at the middle and
++12.5 dB at the top: quieter than full scale, the drive amplifies more than it
+folds, and that is what a folder does. With the drive in the middle, the two ends
+of the SHAPE knob land 1.8 dB apart on the 0.9 peak pluck.
+- `tools/levels.cpp` grew `--peak` and `--settle` for that measurement: the first
+scales the source to the level a patch reaches, the second runs the unit before
+the source starts so a 20 ms knob ramp has arrived. The default source peaks at
+0.1 and the pluck at 0.54, so a waveshaper measured on either is measured well
+below where it is used.
 - On the harness's −30 dB source the folder is mostly gain: folding starts where
 the driven signal reaches full scale, so the golden records the ramps and the
 curve and the folds themselves are an instrument-level thing. The unit costs
-18.7 ns a frame in `tools/bench.cpp`, between `resonator` and `elements`.
+14.4 ns a frame in `tools/bench.cpp`, between `elements` and `bowed`.
 
 ## knobs that move instead of jumping
 
