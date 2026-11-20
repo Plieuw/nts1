@@ -1,6 +1,7 @@
-# What is maintained: the three oscillators, and the units that changed on
-# 2026-11-19. lpg and barber are finished as they are and are not rebuilt into a
-# release any more; they stay in the repository and in the build.
+# What is maintained: the three oscillators, the units that changed on
+# 2026-11-19, and the wavefolder added on 2026-11-20. lpg and barber are finished
+# as they are and are not rebuilt into a release any more; they stay in the
+# repository and in the build.
 #
 #   ./scripts/build.sh --pack live
 noise
@@ -10,3 +11,4 @@ reso
 elements
 irbody
 irbody_delay
+wavefolder

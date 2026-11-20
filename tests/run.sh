@@ -11,10 +11,10 @@ OUT=${OUT:-/tmp/nts1-tests}
 mkdir -p "$OUT"
 
 status=0
-for u in noise resonator bowed lpg reso elements barber irbody irbody_delay; do
+for u in noise resonator bowed lpg reso elements wavefolder barber irbody irbody_delay; do
   case $u in
     noise|resonator|bowed)   kind=0 ;;
-    lpg|reso|elements)       kind=1 ;;
+    lpg|reso|elements|wavefolder) kind=1 ;;
     barber|irbody_delay)     kind=2 ;;
     irbody)                  kind=3 ;;
   esac

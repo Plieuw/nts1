@@ -31,8 +31,8 @@ envelope away from its closest neighbour (4.3 at the closest, median 9.4), so a
 move of the model knob changes the object and not just its brightness. The numbering moved with it: this is the
 first version where model 5 is not the same instrument it used to be.# NTS-1 units
 
-Seven custom units for the **KORG Nu:Tekt NTS-1 (mkI)**, built with the
-[logue SDK](https://github.com/korginc/logue-sdk) v1.1-0. Two oscillators, three
+Eight custom units for the **KORG Nu:Tekt NTS-1 (mkI)**, built with the
+[logue SDK](https://github.com/korginc/logue-sdk) v1.1-0. Two oscillators, four
 modulation effects, an endless barberpole phaser in the delay slot and a body and
 space model in the reverb slot — a unit for every user slot the instrument has.
 
@@ -44,13 +44,14 @@ space model in the reverb slot — a unit for every user slot the instrument has
 | `lpg` | MOD | Vactrol style low pass gate driven by an envelope follower | `lpg.ntkdigunit` |
 | `reso` | MOD | Twelve mode resonator with beating pairs, Rings in spirit | `reso.ntkdigunit` |
 | `elements` | MOD | Geometry morphing resonator: string, membrane, plate, bell | `elements.ntkdigunit` |
+| `wavefolder` | MOD | Five fold wavefolder, triangle to sine curve | `wavefolder.ntkdigunit` |
 | `barber` | DELAY | Barberpole phaser that rises or falls forever | `barber.ntkdigunit` |
 | `irbody` | REVERB | Instrument bodies — soundbox, tube, shell — played as filters | `irbody.ntkdigunit` |
 | `irbody` | DELAY | The same body model, built for the delay slot | `irbody_delay.ntkdigunit` |
 
 The NTS-1 has one slot per type, so `noise` and `resonator` are alternatives
-for the oscillator slot, and `lpg`, `reso` and `elements` are alternatives for
-the modulation slot. `barber` and `irbody` are alternatives too, for a
+for the oscillator slot, and `lpg`, `reso`, `elements` and `wavefolder` are
+alternatives for the modulation slot. `barber` and `irbody` are alternatives too, for a
 reason that is easy to miss: on the mkI a custom **delay** and a custom
 **reverb** are loaded into the same runtime, so only one of the two can be a
 custom effect at a time (see [Stacking the units](#stacking-the-units)).
@@ -77,6 +78,7 @@ where that chain does the most for it.
 | OSC | — | `bowed` | the only slot that is handed the note and keeps sounding for as long as the key is down; nothing later in the chain can make a struck sound sustain |
 | MOD | amp/EG | `lpg` | first slot after the amp envelope, so the follower hears the shape of the note, which is exactly what a vactrol gate wants. The NTS-1 has no user filter or EG slot |
 | MOD | amp/EG | `reso`, `elements` | they turn the oscillator into an instrument, so everything time based should come after them |
+| MOD | amp/EG | `wavefolder` | it folds what the amp envelope hands it, so a plucked note opens up as it decays and a held one sits at a steady fold: the shaper wants the shaped signal, and that is this slot |
 | DELAY | mod | `barber` | a phaser belongs before the reverb, and it needs the shift-depth parameter that only a delay or reverb unit gets — that is where the notch count lives; a modulation effect has no such parameter |
 | REVERB | delay | `irbody` | a space belongs at the end of the chain, and a reverb unit gets the same 12 KB of code, 2.4 MB of SDRAM and shift-depth mix as a delay unit |
 
@@ -394,6 +396,39 @@ used for a pair instead of being read and written once per sample.
 | A (TIME) | fundamental, 40 Hz .. 2 kHz |
 | B (DEPTH) | geometry: string → membrane → plate → bell |
 
+### wavefolder — modulation effect (five fold wavefolder)
+
+A folder turns a signal back on itself at full scale instead of clipping it:
+what a clipper would flatten becomes another trip up the curve, and the
+harmonics that adds are the effect. This one folds at most five times — the
+fifth reflection is the last, and past it the curve rides the cap — so the knob
+walks from a clean signal into five reflections instead of into a fuzz.
+
+| Control | Function |
+| --- | --- |
+| A (TIME) | fold: drive into the curve, 1x .. 8x |
+| B (DEPTH) | shape: triangle fold .. sine fold |
+
+The two curves are the ones folders are usually built from. A triangle fold is
+piecewise straight, so every reflection is a corner and the top of the knob is
+hard and buzzy; a sine fold is the same walk with round corners. The B knob is
+the one in between, so it moves the edge of the harmonics rather than how many
+of them there are: at the middle of the drive, the two ends of it land 3.8 dB
+apart in level on the broadband source, the sine end being the louder.
+
+Drive is gain as well as fold, and a knob that is really a volume control is not
+what this is for, so three quarters of the drive is taken back out
+(1 / drive^0.75). Measured with `tools/levels.cpp`: the middle of the knobs is
++0.8 dB on the broadband source and +0.4 dB on a plucked note, the clean end of
+the FOLD knob is −1.3 dB, and the whole sweep stays between −1.1 and +2.8 dB.
+
+The unit keeps no state and has no tail: the curve is a function of the sample
+going through it, so digital silence in is exactly digital silence out and the
+block is skipped (the knob ramps still run, so a knob moved over silence lands
+where it should). Both knobs move as 20 ms slopes spread across the samples of
+the block, because the drive is a gain into a curve and a gain that steps
+between parameter messages is a click on anything sustained.
+
 ### barber — delay effect (barberpole phaser)
 
 One to sixteen all-pass sections, eight notches in the audible range at the top
@@ -571,7 +606,7 @@ What the mkI *does* constrain is which slots can be full at the same time:
 
 | Combination | Works | Why |
 | --- | --- | --- |
-| any one of `lpg`, `reso`, `elements` | yes | there is one MOD slot, so they are alternatives |
+| any one of `lpg`, `reso`, `elements`, `wavefolder` | yes | there is one MOD slot, so they are alternatives |
 | `noise` or `resonator` with any of them | yes | the oscillator and the effect slots are independent |
 | `barber` in DELAY with a stock reverb | yes | a stock delay and a stock reverb do not collide |
 | `irbody` in REVERB with a stock delay | yes | same |
@@ -588,7 +623,8 @@ One block is 64 frames at 48 kHz: 1.333 ms, and the bench strikes a note every
 half second so an oscillator is timed while it is sounding and not after it has
 decayed. The most expensive unit here, `barber`, asks for 48 ns of host time per
 frame, which is 3.1 µs of a 1333 µs block, or 0.23%. Then `irbody` 28 ns/frame,
-`reso` 22, `lpg` 21, `resonator` 20, `elements` 16, `bowed` 12 and `noise` 9. The
+`reso` 22, `lpg` 21, `resonator` 20, `wavefolder` 19, `elements` 16, `bowed` 12
+and `noise` 9. The
 Cortex-M4F in the
 NTS-1 runs at 168 MHz and has a single precision
 FPU, so the same code there costs several times what it costs on a desktop core;
@@ -621,7 +657,7 @@ instead of the forty eight simultaneous tones the goldens use.
   added distortion.
 * **An effect leaves the level of a dry note where it found it**, at the middle
   of its knobs. With one plucked note: `lpg` +0.4 dB, `reso` +1.1, `barber`
-  +0.8, `elements` −0.0 and `irbody` +0.8. `elements` was 9.8 dB down and
+  +0.8, `elements` −0.0, `wavefolder` +0.4 and `irbody` +0.8. `elements` was 9.8 dB down and
   `irbody` 17.3 dB up — the body sat on top of the note and clipped it on every
   pluck, where a reverb should sit behind it.
 

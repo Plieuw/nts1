@@ -3,6 +3,26 @@
 Each unit keeps its own version in its manifest; this file says what changed.
 Older history is in the commit log.
 
+## a wavefolder in the mod slot
+
+- `wavefolder` 1.0-0 — a new modulation effect: a five fold wavefolder. A is the
+drive into the fold, 1x to 8x, so full scale material is folded five times at
+the top of the knob and rides the cap past that; B morphs the curve from a
+triangle fold (piecewise straight, a corner at every reflection) to a sine fold
+(round corners). Both knobs move as 20 ms slopes spread over the samples of the
+block, the unit keeps no state at all, and a silent block is skipped exactly.
+- The drive is gain as well as fold, so three quarters of it is taken back out
+(1 / drive^0.75). Without that, a turn of the FOLD knob was a volume knob first
+and a fold knob second: +11.4 dB at the middle of the range. Measured with
+`tools/levels.cpp`: +0.8 dB at the middle on the broadband source, +0.4 dB on a
+plucked note, −1.3 dB at the clean end, and −1.1 to +2.8 dB over the whole FOLD
+sweep. With the drive in the middle, the two ends of the SHAPE knob land 3.8 dB
+apart on that source, the sine end being the louder.
+- On the harness's −30 dB source the folder is mostly gain: folding starts where
+the driven signal reaches full scale, so the golden records the ramps and the
+curve and the folds themselves are an instrument-level thing. The unit costs
+18.7 ns a frame in `tools/bench.cpp`, between `resonator` and `elements`.
+
 ## knobs that move instead of jumping
 
 - `reso` 1.2-1 and `elements` 1.7-1 — the two knobs are ramps now, 20 ms whatever
