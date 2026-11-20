@@ -424,7 +424,9 @@ cancel in mono; a different weighting of the same reflections does not.
 
 It is in the delay slot because that is the slot with the memory a space needs,
 and because it adds the wet to the dry instead of replacing it: a stock reverb
-can still end the chain after it.
+can still end the chain after it. The four lines, the two diffusers and the input
+history are 6524 bytes of SRAM, and the unit is 8352 of the delay slot's 12288
+bytes in the gcc 5.4 build, with no maths library.
 
 ## Stacking the units
 
@@ -549,6 +551,7 @@ is what the effect slots are handed between notes.
 | `bowed` | 2.7 KB | 4.1 KB | 12 ns/frame | 1.6 ns |
 | `reso` | 2.1 KB | 0.4 KB | 22 ns/frame | 2.6 ns |
 | `wavefolder` | 1.3 KB | none | 15 ns/frame | 2.8 ns |
+| `reflect` | 1.8 KB | 6.4 KB | 39 ns/frame | 1.9 ns |
 
 An effect slot is handed digital silence between notes, and every unit here skips
 a block whose input is all zeroes once its own state has run down: that is not an
@@ -639,6 +642,7 @@ one grew past it.
 ```
 noise        6680 /  32768 bytes of osc    memory  ok    libm: none
 wavefolder   1292 /   6144 bytes of modfx  memory  ok    libm: none
+reflect      8352 /  12288 bytes of delfx  memory  ok    libm: none
 ```
 
 The same tool runs `nm` over every unit file and fails if one of them links the
@@ -658,6 +662,7 @@ What each unit file links, from `nm` over the ELFs CI builds:
 | --- | --- | --- |
 | `bowed` | none | none |
 | `noise` | `___osc_mcu_hash_veneer`, `___osc_white_veneer` | none |
+| `reflect` | none | none |
 | `reso` | none | none |
 | `resonator` | `___osc_mcu_hash_veneer` | none |
 | `wavefolder` | none | none |
